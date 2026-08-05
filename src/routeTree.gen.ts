@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAlertasRouteImport } from './routes/_authenticated/alertas'
 import { Route as AuthenticatedInicioRouteImport } from './routes/_authenticated/inicio'
+import { Route as AuthenticatedPerfilRouteImport } from './routes/_authenticated/perfil'
 import { Route as AuthenticatedDashboardsIndexRouteImport } from './routes/_authenticated/dashboards.index'
 import { Route as AuthenticatedDashboardsIdRouteImport } from './routes/_authenticated/dashboards.$id'
 
@@ -41,6 +42,11 @@ const AuthenticatedInicioRoute = AuthenticatedInicioRouteImport.update({
   path: '/inicio',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPerfilRoute = AuthenticatedPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedDashboardsIndexRoute =
   AuthenticatedDashboardsIndexRouteImport.update({
     id: '/dashboards/',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/alertas': typeof AuthenticatedAlertasRoute
   '/inicio': typeof AuthenticatedInicioRoute
+  '/perfil': typeof AuthenticatedPerfilRoute
   '/dashboards/$id': typeof AuthenticatedDashboardsIdRoute
   '/dashboards/': typeof AuthenticatedDashboardsIndexRoute
 }
@@ -67,6 +74,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/alertas': typeof AuthenticatedAlertasRoute
   '/inicio': typeof AuthenticatedInicioRoute
+  '/perfil': typeof AuthenticatedPerfilRoute
   '/dashboards/$id': typeof AuthenticatedDashboardsIdRoute
   '/dashboards': typeof AuthenticatedDashboardsIndexRoute
 }
@@ -77,15 +85,29 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/alertas': typeof AuthenticatedAlertasRoute
   '/_authenticated/inicio': typeof AuthenticatedInicioRoute
+  '/_authenticated/perfil': typeof AuthenticatedPerfilRoute
   '/_authenticated/dashboards/$id': typeof AuthenticatedDashboardsIdRoute
   '/_authenticated/dashboards/': typeof AuthenticatedDashboardsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/alertas' | '/inicio' | '/dashboards/$id' | '/dashboards/'
+    | '/'
+    | '/auth'
+    | '/alertas'
+    | '/inicio'
+    | '/perfil'
+    | '/dashboards/$id'
+    | '/dashboards/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/alertas' | '/inicio' | '/dashboards/$id' | '/dashboards'
+  to:
+    | '/'
+    | '/auth'
+    | '/alertas'
+    | '/inicio'
+    | '/perfil'
+    | '/dashboards/$id'
+    | '/dashboards'
   id:
     | '__root__'
     | '/'
@@ -93,6 +115,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/alertas'
     | '/_authenticated/inicio'
+    | '/_authenticated/perfil'
     | '/_authenticated/dashboards/$id'
     | '/_authenticated/dashboards/'
   fileRoutesById: FileRoutesById
@@ -140,6 +163,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedInicioRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/perfil': {
+      id: '/_authenticated/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof AuthenticatedPerfilRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/dashboards/': {
       id: '/_authenticated/dashboards/'
       path: '/dashboards'
@@ -160,6 +190,7 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAlertasRoute: typeof AuthenticatedAlertasRoute
   AuthenticatedInicioRoute: typeof AuthenticatedInicioRoute
+  AuthenticatedPerfilRoute: typeof AuthenticatedPerfilRoute
   AuthenticatedDashboardsIdRoute: typeof AuthenticatedDashboardsIdRoute
   AuthenticatedDashboardsIndexRoute: typeof AuthenticatedDashboardsIndexRoute
 }
@@ -167,6 +198,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAlertasRoute: AuthenticatedAlertasRoute,
   AuthenticatedInicioRoute: AuthenticatedInicioRoute,
+  AuthenticatedPerfilRoute: AuthenticatedPerfilRoute,
   AuthenticatedDashboardsIdRoute: AuthenticatedDashboardsIdRoute,
   AuthenticatedDashboardsIndexRoute: AuthenticatedDashboardsIndexRoute,
 }
