@@ -109,7 +109,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             icon={Bell}
             label="Alertas"
             collapsed={collapsed}
-            badge={alerts.length || undefined}
+            badge={alerts.length}
           />
           {isAdmin && (
             <Item to="/admin" icon={Settings} label="Administração" collapsed={collapsed} />

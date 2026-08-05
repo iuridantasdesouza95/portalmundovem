@@ -140,10 +140,16 @@ function DashboardsAdmin() {
     let dashboardId = editing?.id;
     if (editing) {
       const { error } = await supabase.from("dashboards").update(payload).eq("id", editing.id);
-      if (error) return toast.error(error.message);
+      if (error) {
+      toast.error(error.message);
+      return;
+    }
     } else {
       const { data, error } = await supabase.from("dashboards").insert(payload).select("id").single();
-      if (error) return toast.error(error.message);
+      if (error) {
+      toast.error(error.message);
+      return;
+    }
       dashboardId = data.id;
     }
     if (dashboardId) {
@@ -165,7 +171,10 @@ function DashboardsAdmin() {
 
   async function remove(d: Dashboard) {
     const { error } = await supabase.from("dashboards").delete().eq("id", d.id);
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     await logAction("removeu", "dashboard", d.name);
     qc.invalidateQueries({ queryKey: ["dashboards"] });
     toast.success("Dashboard removido");
@@ -378,7 +387,10 @@ function CategoriesAdmin() {
     const { error } = await supabase
       .from("categories")
       .insert({ name, slug, icon, sort_order: categories.length + 1 });
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     setName("");
     qc.invalidateQueries({ queryKey: ["categories"] });
     toast.success("Categoria criada");
@@ -386,7 +398,10 @@ function CategoriesAdmin() {
 
   async function remove(id: string) {
     const { error } = await supabase.from("categories").delete().eq("id", id);
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
     qc.invalidateQueries({ queryKey: ["categories"] });
   }
 
