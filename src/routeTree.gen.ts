@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuthenticatedAlertasRouteImport } from './routes/_authenticated/alertas'
 import { Route as AuthenticatedInicioRouteImport } from './routes/_authenticated/inicio'
 import { Route as AuthenticatedDashboardsIndexRouteImport } from './routes/_authenticated/dashboards.index'
 import { Route as AuthenticatedDashboardsIdRouteImport } from './routes/_authenticated/dashboards.$id'
@@ -29,6 +30,11 @@ const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedAlertasRoute = AuthenticatedAlertasRouteImport.update({
+  id: '/alertas',
+  path: '/alertas',
+  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedInicioRoute = AuthenticatedInicioRouteImport.update({
   id: '/inicio',
@@ -51,6 +57,7 @@ const AuthenticatedDashboardsIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/alertas': typeof AuthenticatedAlertasRoute
   '/inicio': typeof AuthenticatedInicioRoute
   '/dashboards/$id': typeof AuthenticatedDashboardsIdRoute
   '/dashboards/': typeof AuthenticatedDashboardsIndexRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/alertas': typeof AuthenticatedAlertasRoute
   '/inicio': typeof AuthenticatedInicioRoute
   '/dashboards/$id': typeof AuthenticatedDashboardsIdRoute
   '/dashboards': typeof AuthenticatedDashboardsIndexRoute
@@ -67,20 +75,23 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_authenticated/alertas': typeof AuthenticatedAlertasRoute
   '/_authenticated/inicio': typeof AuthenticatedInicioRoute
   '/_authenticated/dashboards/$id': typeof AuthenticatedDashboardsIdRoute
   '/_authenticated/dashboards/': typeof AuthenticatedDashboardsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/inicio' | '/dashboards/$id' | '/dashboards/'
+  fullPaths:
+    '/' | '/auth' | '/alertas' | '/inicio' | '/dashboards/$id' | '/dashboards/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/inicio' | '/dashboards/$id' | '/dashboards'
+  to: '/' | '/auth' | '/alertas' | '/inicio' | '/dashboards/$id' | '/dashboards'
   id:
     | '__root__'
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/_authenticated/alertas'
     | '/_authenticated/inicio'
     | '/_authenticated/dashboards/$id'
     | '/_authenticated/dashboards/'
@@ -115,6 +126,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/alertas': {
+      id: '/_authenticated/alertas'
+      path: '/alertas'
+      fullPath: '/alertas'
+      preLoaderRoute: typeof AuthenticatedAlertasRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/inicio': {
       id: '/_authenticated/inicio'
       path: '/inicio'
@@ -140,12 +158,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedAlertasRoute: typeof AuthenticatedAlertasRoute
   AuthenticatedInicioRoute: typeof AuthenticatedInicioRoute
   AuthenticatedDashboardsIdRoute: typeof AuthenticatedDashboardsIdRoute
   AuthenticatedDashboardsIndexRoute: typeof AuthenticatedDashboardsIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedAlertasRoute: AuthenticatedAlertasRoute,
   AuthenticatedInicioRoute: AuthenticatedInicioRoute,
   AuthenticatedDashboardsIdRoute: AuthenticatedDashboardsIdRoute,
   AuthenticatedDashboardsIndexRoute: AuthenticatedDashboardsIndexRoute,
