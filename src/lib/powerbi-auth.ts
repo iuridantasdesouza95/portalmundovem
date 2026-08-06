@@ -59,12 +59,11 @@ async function getMsal(config: EntraConfig) {
 /** Retorna um access token do Power BI para o usuário logado. */
 export async function getPowerBIToken(config: EntraConfig): Promise<string> {
   const msal = await getMsal(config);
-  const accounts = msal.getAllAccounts();
-  const request = { scopes: POWERBI_SCOPES, account: accounts[0] };
+  const account = msal.getAllAccounts()[0];
 
-  if (accounts.length > 0) {
+  if (account) {
     try {
-      const result = await msal.acquireTokenSilent(request);
+      const result = await msal.acquireTokenSilent({ scopes: POWERBI_SCOPES, account });
       return result.accessToken;
     } catch {
       // cai para o fluxo interativo abaixo
