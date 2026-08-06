@@ -22,6 +22,7 @@ import {
   useProfile,
   roleLabel,
 } from "@/lib/portal-data";
+import { usePowerBIPrewarm } from "@/lib/powerbi-auth";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -54,6 +55,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: profile } = useProfile();
   const { data: alerts = [] } = useAlerts();
   const isAdmin = roles.includes("administrador");
+
+  // Login único: aquece a sessão Microsoft Entra ID logo após o login do portal.
+  usePowerBIPrewarm(profile?.email);
 
   useEffect(() => setMobileOpen(false), [pathname]);
 
