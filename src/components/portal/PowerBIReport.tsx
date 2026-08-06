@@ -1,30 +1,31 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, ShieldAlert } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Loader2, ShieldAlert } from "lucide-react";
+import { usePowerBIToken } from "@/lib/powerbi-auth";
 
 type Props = {
   reportUrl: string;
   reportId?: string | null;
-  accessToken?: string | null;
   name: string;
 };
 
 /**
  * Camada de exibição do Power BI.
  *
- * Usa o SDK oficial (powerbi-client) sempre que houver um token de embed
- * disponível — carregado dinamicamente no browser. Sem token, mantém o
- * carregamento seguro do relatório publicado, sem recriar nenhum visual.
- * Qualquer republicação feita no Power BI Desktop/Service aparece aqui
- * automaticamente, sem alteração de código.
+ * Usa sempre o SDK oficial (powerbi-client) com o token do próprio usuário
+ * (SSO Microsoft Entra ID). O iframe permanece apenas como fallback quando
+ * o SDK falha ou quando o Entra ID ainda não está configurado.
+ * Qualquer republicação feita no Power BI Desktop aparece aqui automaticamente.
  */
-export function PowerBIReport({ reportUrl, reportId, accessToken, name }: Props) {
+export function PowerBIReport({ reportUrl, reportId, name }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [sdkError, setSdkError] = useState<string | null>(null);
-  const embedded = Boolean(accessToken && reportId);
+  const [sdkFailed, setSdkFailed] = useState(false);
+
+  const wantsSdk = Boolean(reportUrl && reportId);
+  const { data: accessToken, isLoading, isError } = usePowerBIToken(wantsSdk);
+  const useSdk = wantsSdk && Boolean(accessToken) && !sdkFailed;
 
   useEffect(() => {
-    if (!embedded || !containerRef.current) return;
+    if (!useSdk || !containerRef.current) return;
     let disposed = false;
     const node = containerRef.current;
 
@@ -43,61 +44,64 @@ export function PowerBIReport({ reportUrl, reportId, accessToken, name }: Props)
           id: reportId as string,
           embedUrl: reportUrl,
           accessToken: accessToken as string,
-          tokenType: pbi.models.TokenType.Embed,
+          tokenType: pbi.models.TokenType.Aad,
           settings: {
-            panes: { filters: { visible: false }, pageNavigation: { visible: true } },
+            panes: {
+              filters: { visible: false, expanded: false },
+              pageNavigation: { visible: false },
+            },
+            bars: { statusBar: { visible: false } },
+            navContentPaneEnabled: false,
+            filterPaneEnabled: false,
             background: pbi.models.BackgroundType.Transparent,
           },
         });
-      } catch (err) {
-        if (!disposed) setSdkError(err instanceof Error ? err.message : "Falha ao carregar o SDK");
+      } catch {
+        if (!disposed) setSdkFailed(true);
       }
     })();
 
     return () => {
       disposed = true;
+      try {
+        node.replaceChildren();
+      } catch {
+        /* noop */
+      }
     };
-  }, [embedded, reportId, reportUrl, accessToken]);
+  }, [useSdk, reportId, reportUrl, accessToken]);
 
-  if (embedded) {
+  if (!reportUrl) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border bg-card p-10 text-center">
+        <ShieldAlert className="size-7 text-muted-foreground" />
+        <p className="max-w-md text-sm text-muted-foreground">
+          Nenhuma URL de relatório cadastrada para este dashboard. Informe a URL de incorporação na
+          área de Administração.
+        </p>
+      </div>
+    );
+  }
+
+  if (wantsSdk && isLoading && !isError) {
+    return (
+      <div className="flex h-full w-full items-center justify-center gap-2 rounded-xl border bg-card text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Carregando relatório…
+      </div>
+    );
+  }
+
+  if (useSdk) {
     return (
       <div className="h-full w-full overflow-hidden rounded-xl border bg-card">
         <div ref={containerRef} className="h-full w-full [&_iframe]:border-0" />
-        {sdkError ? (
-          <p className="p-4 text-sm text-muted-foreground">{sdkError}</p>
-        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-card">
-      {reportUrl ? (
-        <iframe
-          title={name}
-          src={reportUrl}
-          className="h-full w-full flex-1 border-0"
-          allowFullScreen
-        />
-      ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-          <ShieldAlert className="size-7 text-muted-foreground" />
-          <p className="max-w-md text-sm text-muted-foreground">
-            Nenhuma URL de relatório cadastrada para este dashboard. Informe a URL do Power BI na
-            área de Administração.
-          </p>
-        </div>
-      )}
-      <div className="flex items-center justify-between border-t px-4 py-2 text-xs text-muted-foreground">
-        <span>Conteúdo servido diretamente do Power BI Service.</span>
-        {reportUrl ? (
-          <Button asChild variant="ghost" size="sm">
-            <a href={reportUrl} target="_blank" rel="noreferrer">
-              Abrir em nova aba <ExternalLink className="ml-1 size-3.5" />
-            </a>
-          </Button>
-        ) : null}
-      </div>
+    <div className="h-full w-full overflow-hidden rounded-xl border bg-card">
+      <iframe title={name} src={reportUrl} className="h-full w-full border-0" allowFullScreen />
     </div>
   );
 }
