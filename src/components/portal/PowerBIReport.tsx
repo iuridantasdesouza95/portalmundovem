@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { usePowerBIToken } from "@/lib/powerbi-auth";
+import { useProfile } from "@/lib/portal-data";
 
 type Props = {
   reportUrl: string;
@@ -11,17 +12,20 @@ type Props = {
 /**
  * Camada de exibição do Power BI.
  *
- * Usa sempre o SDK oficial (powerbi-client) com o token do próprio usuário
- * (SSO Microsoft Entra ID). O iframe permanece apenas como fallback quando
- * o SDK falha ou quando o Entra ID ainda não está configurado.
- * Qualquer republicação feita no Power BI Desktop aparece aqui automaticamente.
+ * Modo principal: SDK oficial (powerbi-client) com Access Token do Microsoft Entra ID
+ * (TokenType.Aad) do próprio usuário — a mesma sessão criada no login do portal.
+ * Este componente NUNCA inicia uma nova autenticação: apenas consome o token do cache.
+ * O iframe é apenas fallback (SDK falhou, Power BI indisponível ou Entra não configurado).
  */
 export function PowerBIReport({ reportUrl, reportId, name }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const embedRef = useRef<{ setAccessToken: (t: string) => Promise<void> } | null>(null);
   const [sdkFailed, setSdkFailed] = useState(false);
 
+  const { data: profile } = useProfile();
   const wantsSdk = Boolean(reportUrl && reportId);
-  const { data: accessToken, isLoading, isError } = usePowerBIToken(wantsSdk);
+  const { data: token, isLoading, isError } = usePowerBIToken(wantsSdk, profile?.email);
+  const accessToken = token?.accessToken;
   const useSdk = wantsSdk && Boolean(accessToken) && !sdkFailed;
 
   useEffect(() => {
@@ -39,7 +43,7 @@ export function PowerBIReport({ reportUrl, reportId, name }: Props) {
           pbi.factories.routerFactory,
         );
         service.reset(node);
-        service.embed(node, {
+        const report = service.embed(node, {
           type: "report",
           id: reportId as string,
           embedUrl: reportUrl,
@@ -56,6 +60,11 @@ export function PowerBIReport({ reportUrl, reportId, name }: Props) {
             background: pbi.models.BackgroundType.Transparent,
           },
         });
+        embedRef.current = report as unknown as { setAccessToken: (t: string) => Promise<void> };
+        report.off("error");
+        report.on("error", () => {
+          if (!disposed) setSdkFailed(true);
+        });
       } catch {
         if (!disposed) setSdkFailed(true);
       }
@@ -63,13 +72,25 @@ export function PowerBIReport({ reportUrl, reportId, name }: Props) {
 
     return () => {
       disposed = true;
+      embedRef.current = null;
       try {
         node.replaceChildren();
       } catch {
         /* noop */
       }
     };
-  }, [useSdk, reportId, reportUrl, accessToken]);
+    // o embed não é recriado quando o token é renovado — ver efeito abaixo
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useSdk, reportId, reportUrl]);
+
+  // Renovação automática: injeta o novo Access Token no relatório já carregado,
+  // sem recarregar a página e sem pedir login novamente.
+  useEffect(() => {
+    if (!accessToken || !embedRef.current) return;
+    void embedRef.current.setAccessToken(accessToken).catch(() => {
+      /* mantém o token anterior até a próxima renovação */
+    });
+  }, [accessToken]);
 
   if (!reportUrl) {
     return (
