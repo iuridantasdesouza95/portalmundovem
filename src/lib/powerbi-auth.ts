@@ -51,7 +51,7 @@ async function getMsal(config: EntraConfig) {
           redirectUri: window.location.origin,
         },
         // localStorage mantém a sessão entre abas e reloads: um único login.
-        cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false },
+        cache: { cacheLocation: "localStorage" },
       });
       await instance.initialize();
       await instance.handleRedirectPromise();
@@ -69,7 +69,7 @@ async function getMsal(config: EntraConfig) {
  */
 export async function getPowerBIToken(
   config: EntraConfig,
-  options?: { loginHint?: string; interactive?: boolean },
+  options?: { loginHint?: string | undefined; interactive?: boolean | undefined },
 ): Promise<PowerBIToken> {
   const msal = await getMsal(config);
   const account = msal.getActiveAccount() ?? msal.getAllAccounts()[0];
