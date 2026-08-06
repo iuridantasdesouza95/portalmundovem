@@ -5,6 +5,7 @@
     "": {
       "name": "tanstack_start_ts",
       "dependencies": {
+        "@azure/msal-browser": "^5.18.0",
         "@hookform/resolvers": "^5.2.2",
         "@lovable.dev/cloud-auth-js": "^1.1.2",
         "@radix-ui/react-accordion": "^1.2.12",
@@ -84,6 +85,10 @@
     },
   },
   "packages": {
+    "@azure/msal-browser": ["@azure/msal-browser@5.18.0", "https://europe-west4-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/@azure/msal-browser/-/msal-browser-5.18.0.tgz", { "dependencies": { "@azure/msal-common": "16.12.0" } }, "sha512-SPTeHYZghdEdRddJzNjhH+CI5MSQtquNYwGJnYXfOHIBRXCmrWimBS85OhwXpXFIlrCtNTbBPm5mPAWRNEoktA=="],
+
+    "@azure/msal-common": ["@azure/msal-common@16.12.0", "https://europe-west4-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/@azure/msal-common/-/msal-common-16.12.0.tgz", {}, "sha512-hgLgfRdbG2AmhXPygebf1KYJEvse86+ZZLWufdiTKaGRYEUqOzHdlf6AS1IiuUCHWbynkgbHc451jSNkbfhWlg=="],
+
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
 
     "@babel/compat-data": ["@babel/compat-data@7.29.7", "", {}, "sha512-locTkQyKvwIEgBzVrn8693ebc97F2U8ZHjbXwDXJ5Fn2TCpNwTlKcaKLkdHop5c/icOFE7qt7Q9JC5hnKNa6Gg=="],
