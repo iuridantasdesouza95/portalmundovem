@@ -255,36 +255,28 @@ export async function getMsal(
 }
 
 /* -------------------------------------------------------------------------- */
+/* -------------------------------------------------------------------------- */
 /* LOGIN MICROSOFT                                                            */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Login principal do Portal.
- *
- * Este login acontece somente na tela /auth.
- *
- * Depois que o usuário entra:
- *
- * Microsoft Entra
- *      ↓
- * MSAL mantém a conta
- *      ↓
- * Supabase cria a sessão do Portal
- *
- * O Dashboard reutiliza essa mesma sessão.
- */
 export async function loginWithEntra(
   config: EntraConfig,
 ) {
-  console.info(
-    "[ENTRA] Iniciando login Microsoft...",
+  console.log("[ENTRA] Iniciando login Microsoft...");
+
+  const msal = await getMsal(config);
+
+  console.log(
+    "[ENTRA] Contas MSAL disponíveis:",
+    msal.getAllAccounts(),
   );
 
-  const msal =
-    await getMsal(config);
+  try {
+    console.log(
+      "[ENTRA] Abrindo loginPopup da Microsoft...",
+    );
 
-  const result =
-    await msal.loginPopup({
+    const result = await msal.loginPopup({
       scopes: [
         "openid",
         "profile",
@@ -292,37 +284,73 @@ export async function loginWithEntra(
         "User.Read",
       ],
 
-      prompt:
-        "select_account",
+      prompt: "select_account",
+
+      redirectUri: window.location.origin,
     });
 
-  if (!result.account) {
-    throw new Error(
-      "O Microsoft Entra ID não retornou uma conta.",
+    console.log(
+      "[ENTRA] loginPopup concluído.",
     );
-  }
 
-  /*
-   * MUITO IMPORTANTE:
-   * mantém exatamente a mesma conta que acabou
-   * de fazer login como conta ativa do MSAL.
-   */
-  msal.setActiveAccount(
-    result.account,
-  );
+    console.log(
+      "[ENTRA] Conta autenticada:",
+      result.account
+        ? {
+            username: result.account.username,
+            name: result.account.name,
+          }
+        : null,
+    );
 
-  console.info(
-    "[ENTRA] Login Microsoft concluído:",
-    result.account.username,
-  );
+    if (!result.account) {
+      throw new Error(
+        "O Microsoft Entra ID não retornou uma conta.",
+      );
+    }
 
-  return {
-    idToken:
-      result.idToken,
-
-    account:
+    msal.setActiveAccount(
       result.account,
-  };
+    );
+
+    console.log(
+      "[ENTRA] Conta Microsoft definida como ativa.",
+    );
+
+    return {
+      idToken: result.idToken,
+      account: result.account,
+    };
+  } catch (error) {
+    console.error(
+      "[ENTRA] loginPopup FALHOU:",
+      error,
+    );
+
+    if (
+      error &&
+      typeof error === "object" &&
+      "errorCode" in error
+    ) {
+      console.error(
+        "[ENTRA] Código:",
+        (error as { errorCode?: string }).errorCode,
+      );
+    }
+
+    if (
+      error &&
+      typeof error === "object" &&
+      "errorMessage" in error
+    ) {
+      console.error(
+        "[ENTRA] Mensagem:",
+        (error as { errorMessage?: string }).errorMessage,
+      );
+    }
+
+    throw error;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
