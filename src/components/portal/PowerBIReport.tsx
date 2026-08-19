@@ -11,35 +11,30 @@ type Props = {
 
 type PowerBIReportInstance = {
   setAccessToken: (token: string) => Promise<void>;
-  on: (eventName: string, handler: (event: any) => void) => void;
-  off: (eventName: string, handler?: (event: any) => void) => void;
+  on: (
+    eventName: string,
+    handler: (event: any) => void,
+  ) => void;
+  off: (
+    eventName: string,
+    handler?: (event: any) => void,
+  ) => void;
 };
 
-/**
- * Exibição de relatório Power BI usando:
- *
- * Microsoft Entra ID
- *       ↓
- * Access Token delegado
- *       ↓
- * Power BI SDK
- *       ↓
- * TokenType.Aad
- *
- * Não utiliza Embed Token.
- * Não inicia login próprio do Power BI.
- * Não utiliza iframe como fallback silencioso.
- */
 export function PowerBIReport({
   reportUrl,
   reportId,
   name,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const embedRef = useRef<PowerBIReportInstance | null>(null);
+  const embedRef =
+    useRef<PowerBIReportInstance | null>(null);
 
-  const [sdkError, setSdkError] = useState<string | null>(null);
-  const [isEmbedding, setIsEmbedding] = useState(false);
+  const [sdkError, setSdkError] =
+    useState<string | null>(null);
+
+  const [isEmbedding, setIsEmbedding] =
+    useState(false);
 
   const { data: profile } = useProfile();
 
@@ -50,49 +45,37 @@ export function PowerBIReport({
     isLoading: tokenLoading,
     isError: tokenError,
     error: tokenErrorObject,
-  } = usePowerBIToken(wantsSdk, profile?.email);
+  } = usePowerBIToken(
+    wantsSdk,
+    profile?.email,
+  );
 
-  console.log("[PowerBI] Token state:", {
-  wantsSdk,
-  userEmail: profile?.email,
-  tokenLoading,
-  tokenError,
-  hasAccessToken: Boolean(token?.accessToken),
-  tokenExpiresOn: token?.expiresOn,
-});
-  
   const accessToken = token?.accessToken;
 
-  /**
-   * Não exibimos o token.
-   * Apenas sabemos se ele existe ou não.
-   */
   const hasAccessToken = Boolean(accessToken);
 
-  /**
-   * Diagnóstico do token.
+  /*
+   * Diagnóstico.
+   *
+   * IMPORTANTE:
+   * Não registrar o token no console.
    */
   useEffect(() => {
-    if (!wantsSdk) {
-      console.warn(
-        "[PowerBI] SDK não será utilizado: reportUrl ou reportId ausente.",
-      );
-      return;
-    }
-
-    console.info("[PowerBI] Configuração do relatório:", {
+    console.log("[POWERBI] Estado:", {
+      wantsSdk,
       name,
       reportId,
       reportUrl,
       userEmail: profile?.email,
-      hasAccessToken,
       tokenLoading,
       tokenError,
+      hasAccessToken,
+      expiresOn: token?.expiresOn,
     });
 
     if (tokenError) {
       console.error(
-        "[PowerBI] Erro ao obter Access Token:",
+        "[POWERBI] Erro ao obter token:",
         tokenErrorObject,
       );
     }
@@ -102,30 +85,26 @@ export function PowerBIReport({
     reportId,
     reportUrl,
     profile?.email,
-    hasAccessToken,
     tokenLoading,
     tokenError,
     tokenErrorObject,
+    hasAccessToken,
+    token?.expiresOn,
   ]);
 
-  /**
-   * Cria o embed somente quando:
-   *
-   * - existe URL
-   * - existe Report ID
-   * - existe Access Token
+  /*
+   * Embed do relatório.
    */
   useEffect(() => {
-    if (!wantsSdk) return;
+    if (!wantsSdk) {
+      return;
+    }
 
     if (!accessToken) {
       return;
     }
 
     if (!containerRef.current) {
-      console.warn(
-        "[PowerBI] Container do relatório ainda não está disponível.",
-      );
       return;
     }
 
@@ -138,39 +117,35 @@ export function PowerBIReport({
         setSdkError(null);
         setIsEmbedding(true);
 
-        console.info("[PowerBI] Inicializando SDK...");
-
-        const pbi = await import("powerbi-client");
-
-        if (disposed) return;
-
-        /**
-         * Instância oficial do Power BI SDK.
-         */
-        const service = new pbi.service.Service(
-          pbi.factories.hpmFactory,
-          pbi.factories.wpmpFactory,
-          pbi.factories.routerFactory,
+        console.log(
+          "[POWERBI] Inicializando Power BI SDK...",
         );
 
-        /**
-         * Limpa qualquer embed anterior.
-         */
+        const pbi =
+          await import("powerbi-client");
+
+        if (disposed) {
+          return;
+        }
+
+        const service =
+          new pbi.service.Service(
+            pbi.factories.hpmFactory,
+            pbi.factories.wpmpFactory,
+            pbi.factories.routerFactory,
+          );
+
         service.reset(node);
 
-        console.info("[PowerBI] Iniciando embed:", {
-          reportId,
-          reportUrl,
-          tokenType: "Aad",
-        });
+        console.log(
+          "[POWERBI] Criando embed:",
+          {
+            reportId,
+            reportUrl,
+            tokenType: "Aad",
+          },
+        );
 
-        /**
-         * IMPORTANTE:
-         *
-         * TokenType.Aad significa:
-         * "este token pertence ao usuário autenticado
-         * no Microsoft Entra ID".
-         */
         const report = service.embed(node, {
           type: "report",
 
@@ -178,9 +153,10 @@ export function PowerBIReport({
 
           embedUrl: reportUrl,
 
-          accessToken: accessToken as string,
+          accessToken,
 
-          tokenType: pbi.models.TokenType.Aad,
+          tokenType:
+            pbi.models.TokenType.Aad,
 
           settings: {
             panes: {
@@ -212,23 +188,16 @@ export function PowerBIReport({
         embedRef.current =
           report as unknown as PowerBIReportInstance;
 
-        /**
-         * Evento de erro do Power BI.
-         *
-         * NÃO fazemos fallback automático para iframe.
-         *
-         * Isso é proposital:
-         * precisamos descobrir o erro real.
-         */
         const handleError = (event: any) => {
           console.error(
-            "[PowerBI SDK ERROR]",
+            "[POWERBI SDK ERROR]",
             event?.detail,
           );
 
           const detail = event?.detail;
 
-          let message = "O Power BI não conseguiu carregar o relatório.";
+          let message =
+            "O Power BI não conseguiu carregar o relatório.";
 
           if (detail) {
             if (typeof detail === "string") {
@@ -239,7 +208,7 @@ export function PowerBIReport({
               message =
                 typeof detail.error === "string"
                   ? detail.error
-                  : detail.error.message ??
+                  : detail.error?.message ??
                     message;
             }
           }
@@ -250,37 +219,36 @@ export function PowerBIReport({
           }
         };
 
-        report.off("error");
-
-        report.on("error", handleError);
-
-        /**
-         * Eventos úteis para diagnóstico.
-         */
-        report.on("loaded", () => {
-          console.info(
-            "[PowerBI] Relatório carregado.",
+        const handleLoaded = () => {
+          console.log(
+            "[POWERBI] Relatório carregado.",
           );
-        });
+        };
 
-        report.on("rendered", () => {
-          console.info(
-            "[PowerBI] Relatório renderizado.",
+        const handleRendered = () => {
+          console.log(
+            "[POWERBI] Relatório renderizado.",
           );
 
           if (!disposed) {
             setIsEmbedding(false);
           }
-        });
+        };
 
-        setIsEmbedding(false);
+        report.off("error");
+        report.off("loaded");
+        report.off("rendered");
 
-        console.info(
-          "[PowerBI] Embed criado com sucesso.",
+        report.on("error", handleError);
+        report.on("loaded", handleLoaded);
+        report.on("rendered", handleRendered);
+
+        console.log(
+          "[POWERBI] Embed criado com sucesso.",
         );
       } catch (error) {
         console.error(
-          "[POWER BI EMBED ERROR]",
+          "[POWERBI] Erro ao inicializar SDK:",
           error,
         );
 
@@ -326,41 +294,35 @@ export function PowerBIReport({
     accessToken,
   ]);
 
-  /**
-   * Renovação automática do Access Token.
-   *
-   * Quando o MSAL renovar o token:
-   *
-   * token antigo
-   *      ↓
-   * novo token
-   *      ↓
-   * setAccessToken()
-   *
-   * O relatório não precisa ser recarregado.
+  /*
+   * Atualização do token sem recarregar o relatório.
    */
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken) {
+      return;
+    }
 
-    if (!embedRef.current) return;
+    if (!embedRef.current) {
+      return;
+    }
 
     void embedRef.current
       .setAccessToken(accessToken)
       .then(() => {
-        console.info(
-          "[PowerBI] Access Token atualizado silenciosamente.",
+        console.log(
+          "[POWERBI] Access Token atualizado.",
         );
       })
       .catch((error) => {
         console.error(
-          "[PowerBI] Erro ao atualizar Access Token:",
+          "[POWERBI] Erro ao atualizar token:",
           error,
         );
       });
   }, [accessToken]);
 
-  /**
-   * Sem URL.
+  /*
+   * URL ausente.
    */
   if (!reportUrl) {
     return (
@@ -368,20 +330,14 @@ export function PowerBIReport({
         <ShieldAlert className="size-7 text-muted-foreground" />
 
         <p className="max-w-md text-sm text-muted-foreground">
-          Nenhuma URL de relatório cadastrada para este
-          dashboard.
-        </p>
-
-        <p className="max-w-md text-xs text-muted-foreground">
-          Informe a URL de incorporação na área de
-          Administração.
+          Nenhuma URL de relatório cadastrada para este dashboard.
         </p>
       </div>
     );
   }
 
-  /**
-   * SDK precisa de Report ID.
+  /*
+   * Report ID ausente.
    */
   if (!reportId) {
     return (
@@ -391,57 +347,55 @@ export function PowerBIReport({
         <p className="max-w-md text-sm text-muted-foreground">
           O Report ID do Power BI não está configurado.
         </p>
-
-        <p className="max-w-md text-xs text-muted-foreground">
-          Informe o Report ID utilizado pelo SDK na
-          configuração do dashboard.
-        </p>
       </div>
     );
   }
 
-  /**
-   * Aguardando token.
+  /*
+   * Obtendo autenticação.
    */
   if (tokenLoading && !hasAccessToken) {
     return (
       <div className="flex h-full w-full items-center justify-center gap-2 rounded-xl border bg-card text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
 
-        Autenticando no Microsoft Entra ID…
+        Autenticando no Microsoft 365...
       </div>
     );
   }
 
-  /**
-   * Falha na obtenção do token.
+  /*
+   * Token não obtido.
    */
   if (tokenError || !hasAccessToken) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-xl border bg-card p-10 text-center">
-        <ShieldAlert className="size-7 text-destructive" />
+      <div className="flex h-full w-full flex-col items-center justify-center gap-4 rounded-xl border bg-card p-10 text-center">
+        <ShieldAlert className="size-8 text-destructive" />
 
-        <p className="max-w-lg text-sm font-medium">
-          Não foi possível obter a autenticação do
-          Microsoft Entra ID para o Power BI.
-        </p>
+        <div>
+          <p className="text-sm font-medium">
+            Não foi possível autenticar no Power BI
+          </p>
 
-        <p className="max-w-lg text-xs text-muted-foreground">
-          Verifique se o login Microsoft foi concluído e
-          se o aplicativo possui permissão para acessar
-          o Power BI.
-        </p>
+          <p className="mt-2 max-w-lg text-xs text-muted-foreground">
+            Faça login com sua conta Microsoft corporativa
+            para acessar este dashboard.
+          </p>
+        </div>
 
-        <p className="max-w-lg text-[11px] text-muted-foreground">
-          Abra o Console do navegador (F12) para consultar
-          o diagnóstico.
-        </p>
+        {tokenErrorObject instanceof Error && (
+          <div className="max-w-2xl rounded-md border bg-muted/40 p-3 text-left">
+            <p className="break-all text-xs text-muted-foreground">
+              {tokenErrorObject.message}
+            </p>
+          </div>
+        )}
       </div>
     );
   }
 
-  /**
-   * Erro real do SDK.
+  /*
+   * Erro do SDK.
    */
   if (sdkError) {
     return (
@@ -454,9 +408,8 @@ export function PowerBIReport({
           </p>
 
           <p className="mt-2 max-w-2xl text-xs text-muted-foreground">
-            O Microsoft Entra ID autenticou o usuário,
-            mas o Power BI retornou um erro ao carregar
-            o relatório.
+            A autenticação foi realizada, mas o Power BI
+            retornou um erro ao carregar o relatório.
           </p>
         </div>
 
@@ -465,25 +418,17 @@ export function PowerBIReport({
             {sdkError}
           </p>
         </div>
-
-        <p className="text-[11px] text-muted-foreground">
-          Consulte o Console do navegador (F12) para obter
-          detalhes técnicos.
-        </p>
       </div>
     );
   }
 
-  /**
-   * Embed em andamento.
-   */
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl border bg-card">
       {isEmbedding && (
         <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-background/80 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
 
-          Carregando relatório…
+          Carregando relatório...
         </div>
       )}
 
