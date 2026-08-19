@@ -9,26 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 /* CONFIGURAÇÃO                                                               */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Permissão necessária para solicitar o token do Power BI.
- */
 export const POWERBI_SCOPES = [
   "https://analysis.windows.net/powerbi/api/Report.Read.All",
-];
-
-/**
- * Permissões utilizadas durante o login Microsoft.
- *
- * User.Read é do Microsoft Graph.
- * POWERBI_SCOPES é do recurso Power BI.
- *
- * Recursos diferentes devem ser solicitados em chamadas separadas.
- */
-const LOGIN_SCOPES = [
-  "openid",
-  "profile",
-  "email",
-  "User.Read",
 ];
 
 export type EntraConfig = {
@@ -48,10 +30,7 @@ export type PowerBIToken = {
 export function useEntraConfig() {
   return useQuery({
     queryKey: ["entra-config"],
-
     staleTime: 5 * 60_000,
-
-    retry: false,
 
     queryFn: async (): Promise<EntraConfig | null> => {
       const { data, error } = await supabase
@@ -169,191 +148,115 @@ export async function fetchEntraConfig(): Promise<EntraConfig | null> {
 /* MSAL                                                                       */
 /* -------------------------------------------------------------------------- */
 
-type MsalInstance =
-  import("@azure/msal-browser").PublicClientApplication;
-
-let msalPromise: Promise<MsalInstance> | null = null;
+let msalPromise:
+  | Promise<
+      import("@azure/msal-browser").PublicClientApplication
+    >
+  | null = null;
 
 let msalKey = "";
 
-let redirectHandled = false;
-
-/**
- * Evita duas inicializações simultâneas do MSAL.
- */
 export async function getMsal(
   config: EntraConfig,
-): Promise<MsalInstance> {
+) {
   const key =
     `${config.clientId}:${config.tenantId}`;
 
-  if (msalPromise && msalKey === key) {
-    return msalPromise;
-  }
+  if (!msalPromise || msalKey !== key) {
+    msalKey = key;
 
-  msalKey = key;
+    msalPromise = (async () => {
+      const {
+        PublicClientApplication,
+      } = await import("@azure/msal-browser");
 
-  msalPromise = (async () => {
-    const {
-      PublicClientApplication,
-    } = await import("@azure/msal-browser");
+      const instance =
+        new PublicClientApplication({
+          auth: {
+            clientId: config.clientId,
 
-    const instance =
-      new PublicClientApplication({
-        auth: {
-          clientId: config.clientId,
+            authority:
+              `https://login.microsoftonline.com/${config.tenantId}`,
 
-          authority:
-            `https://login.microsoftonline.com/${config.tenantId}`,
+            /*
+             * IMPORTANTE:
+             *
+             * Para loginPopup, esta URL deve ser uma
+             * redirect URI registrada no App Registration.
+             *
+             * Estamos utilizando /auth porque é a página
+             * principal de autenticação do portal.
+             */
+            redirectUri:
+              `${window.location.origin}/auth`,
 
-          redirectUri:
-            `${window.location.origin}/auth`,
+            postLogoutRedirectUri:
+              `${window.location.origin}/auth`,
+          },
 
-          postLogoutRedirectUri:
-            `${window.location.origin}/auth`,
-        },
+          cache: {
+            cacheLocation:
+              "localStorage",
 
-        cache: {
-          cacheLocation:
-            "localStorage",
+            storeAuthStateInCookie:
+              false,
+          },
+        });
 
-          storeAuthStateInCookie:
-            false,
-        },
+      await instance.initialize();
 
-        system: {
-          allowRedirectInIframe: false,
-        },
-      });
+      /*
+       * Não usamos loginRedirect.
+       *
+       * Portanto não dependemos do handleRedirectPromise()
+       * para o login principal.
+       */
 
-    /*
-     * O initialize precisa terminar antes de qualquer operação MSAL.
-     */
-    await instance.initialize();
+      const accounts =
+        instance.getAllAccounts();
 
-    console.log(
-      "[ENTRA] MSAL inicializado.",
-    );
-
-    /*
-     * IMPORTANTE:
-     *
-     * Se o usuário acabou de voltar da Microsoft,
-     * handleRedirectPromise precisa ser concluído
-     * antes de consultar contas ou iniciar outro login.
-     */
-    if (!redirectHandled) {
-      try {
-        const redirectResult =
-          await instance.handleRedirectPromise();
-
-        redirectHandled = true;
-
-        if (redirectResult?.account) {
-          instance.setActiveAccount(
-            redirectResult.account,
-          );
-
-          console.log(
-            "[ENTRA] Login recebido pelo redirect:",
-            redirectResult.account.username,
-          );
-        } else {
-          console.log(
-            "[ENTRA] Nenhum resultado de redirect pendente.",
-          );
-        }
-      } catch (error) {
-        redirectHandled = true;
-
-        console.error(
-          "[ENTRA] Erro ao processar retorno do Microsoft:",
-          error,
-        );
-
-        throw error;
-      }
-    }
-
-    /*
-     * Recupera contas já armazenadas no cache.
-     */
-    const accounts =
-      instance.getAllAccounts();
-
-    console.info(
-      "[ENTRA] Contas MSAL disponíveis:",
-      accounts.map(
-        (account) =>
-          account.username,
-      ),
-    );
-
-    /*
-     * Define uma conta ativa caso exista apenas uma.
-     */
-    if (accounts.length === 1) {
-      instance.setActiveAccount(
-        accounts[0],
+      console.info(
+        "[ENTRA] MSAL inicializado.",
       );
 
       console.info(
-        "[ENTRA] Conta Microsoft definida como ativa:",
-        accounts[0].username,
+        "[ENTRA] Contas MSAL disponíveis:",
+        accounts.map(
+          (account) =>
+            account.username,
+        ),
       );
-    }
 
-    /*
-     * Se não houver conta ativa, tenta recuperar a primeira.
-     */
-    if (
-      !instance.getActiveAccount() &&
-      accounts.length > 0
-    ) {
-      instance.setActiveAccount(
-        accounts[0],
-      );
-    }
+      if (accounts.length > 0) {
+        const active =
+          instance.getActiveAccount();
 
-    return instance;
-  })();
+        if (!active) {
+          instance.setActiveAccount(
+            accounts[0],
+          );
 
-  try {
-    return await msalPromise;
-  } catch (error) {
-    /*
-     * Permite nova tentativa caso a inicialização tenha falhado.
-     */
-    msalPromise = null;
-    msalKey = "";
+          console.info(
+            "[ENTRA] Conta MSAL definida como ativa:",
+            accounts[0].username,
+          );
+        }
+      }
 
-    throw error;
+      return instance;
+    })();
   }
+
+  return msalPromise;
 }
 
 /* -------------------------------------------------------------------------- */
 /* LOGIN MICROSOFT                                                            */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Login principal do Portal.
- *
- * IMPORTANTE:
- *
- * Este método NÃO tenta:
- *
- * - acquireTokenPopup
- * - ssoSilent
- * - acquireTokenSilent
- *
- * Primeiro precisamos autenticar o usuário.
- *
- * Depois do retorno da Microsoft, o /auth será carregado novamente
- * e getMsal() processará handleRedirectPromise().
- */
 export async function loginWithEntra(
   config: EntraConfig,
-): Promise<never> {
+) {
   console.log(
     "[ENTRA] Iniciando login Microsoft...",
   );
@@ -361,95 +264,125 @@ export async function loginWithEntra(
   const msal =
     await getMsal(config);
 
-  const currentAccount =
-    msal.getActiveAccount();
-
-  if (currentAccount) {
-    console.log(
-      "[ENTRA] Já existe uma conta Microsoft ativa:",
-      currentAccount.username,
-    );
-
-    /*
-     * A conta já está autenticada no MSAL.
-     *
-     * Não iniciamos outro login.
-     *
-     * O auth.tsx poderá continuar o processo.
-     */
-    throw new Error(
-      "entra_already_authenticated",
-    );
-  }
-
-  console.log(
-    "[ENTRA] Nenhuma conta autenticada.",
-  );
-
-  console.log(
-    "[ENTRA] Redirecionando para Microsoft Entra ID...",
-  );
+  const existingAccount =
+    msal.getActiveAccount() ??
+    msal.getAllAccounts()[0] ??
+    null;
 
   /*
-   * loginRedirect navega para a Microsoft.
-   *
-   * O código abaixo não será executado nesta página.
-   *
-   * Ao retornar para /auth, getMsal() executará
-   * handleRedirectPromise() e recuperará a conta.
+   * Se já existe uma conta no cache, reutilizamos.
    */
-  await msal.loginRedirect({
-    scopes: LOGIN_SCOPES,
-
-    prompt: "select_account",
-
-    redirectUri:
-      `${window.location.origin}/auth`,
-  });
-
-  /*
-   * Segurança de TypeScript.
-   */
-  throw new Error(
-    "entra_redirect_started",
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* CONTA MICROSOFT                                                            */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Retorna a conta Microsoft atualmente autenticada.
- */
-export async function getEntraAccount(
-  config: EntraConfig,
-) {
-  const msal =
-    await getMsal(config);
-
-  let account =
-    msal.getActiveAccount();
-
-  if (account) {
-    return account;
-  }
-
-  const accounts =
-    msal.getAllAccounts();
-
-  if (accounts.length > 0) {
-    account =
-      accounts[0];
+  if (existingAccount) {
+    console.info(
+      "[ENTRA] Conta Microsoft já existente:",
+      existingAccount.username,
+    );
 
     msal.setActiveAccount(
-      account,
+      existingAccount,
     );
 
-    return account;
+    try {
+      const token =
+        await msal.acquireTokenSilent({
+          scopes: [
+            "openid",
+            "profile",
+            "email",
+            "User.Read",
+          ],
+          account: existingAccount,
+        });
+
+      if (token.idToken) {
+        console.info(
+          "[ENTRA] Token existente reutilizado.",
+        );
+
+        return {
+          idToken:
+            token.idToken,
+
+          account:
+            token.account ??
+            existingAccount,
+        };
+      }
+    } catch (error) {
+      console.info(
+        "[ENTRA] Não foi possível reutilizar a sessão silenciosamente. Abrindo popup...",
+        error,
+      );
+    }
   }
 
-  return null;
+  /*
+   * IMPORTANTE:
+   *
+   * Usamos loginPopup em vez de loginRedirect.
+   *
+   * Isso resolve o erro:
+   *
+   * redirect_in_iframe
+   *
+   * que ocorre no preview do Lovable.
+   */
+  console.log(
+    "[ENTRA] Abrindo loginPopup da Microsoft...",
+  );
+
+  const response =
+    await msal.loginPopup({
+      scopes: [
+        "openid",
+        "profile",
+        "email",
+        "User.Read",
+      ],
+
+      prompt:
+        "select_account",
+
+      redirectUri:
+        `${window.location.origin}/auth`,
+    });
+
+  if (!response) {
+    throw new Error(
+      "A Microsoft não retornou uma resposta de autenticação.",
+    );
+  }
+
+  const account =
+    response.account;
+
+  if (!account) {
+    throw new Error(
+      "A Microsoft autenticou o usuário, mas nenhuma conta foi retornada.",
+    );
+  }
+
+  msal.setActiveAccount(
+    account,
+  );
+
+  console.info(
+    "[ENTRA] Login Microsoft concluído:",
+    account.username,
+  );
+
+  if (!response.idToken) {
+    throw new Error(
+      "O Microsoft Entra ID não retornou o token de identidade.",
+    );
+  }
+
+  return {
+    idToken:
+      response.idToken,
+
+    account,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -472,17 +405,10 @@ function wrapPowerBIToken(result: {
   };
 }
 
-/**
- * Obtém o Access Token específico do Power BI.
- *
- * NÃO faz login.
- *
- * NÃO abre popup.
- *
- * NÃO executa ssoSilent.
- *
- * O usuário precisa estar autenticado no Microsoft Entra.
- */
+/* -------------------------------------------------------------------------- */
+/* OBTÉM TOKEN POWER BI                                                       */
+/* -------------------------------------------------------------------------- */
+
 export async function getPowerBIToken(
   config: EntraConfig,
   options?: {
@@ -491,7 +417,7 @@ export async function getPowerBIToken(
   },
 ): Promise<PowerBIToken> {
   console.info(
-    "[POWERBI] Obtendo Access Token...",
+    "[POWERBI] Obtendo Access Token silenciosamente...",
   );
 
   const msal =
@@ -500,17 +426,14 @@ export async function getPowerBIToken(
   let account =
     msal.getActiveAccount();
 
-  /*
-   * Recupera a conta do cache caso necessário.
-   */
   if (!account) {
     const accounts =
       msal.getAllAccounts();
 
-    if (accounts.length > 0) {
-      account =
-        accounts[0];
+    account =
+      accounts[0] ?? null;
 
+    if (account) {
       msal.setActiveAccount(
         account,
       );
@@ -522,13 +445,9 @@ export async function getPowerBIToken(
     }
   }
 
-  /*
-   * Sem conta Microsoft não existe como obter
-   * silenciosamente o token do Power BI.
-   */
   if (!account) {
     console.warn(
-      "[POWERBI] Nenhuma sessão Microsoft encontrada.",
+      "[POWERBI] Nenhuma sessão Microsoft disponível.",
     );
 
     throw new Error(
@@ -541,9 +460,6 @@ export async function getPowerBIToken(
     account.username,
   );
 
-  /*
-   * Apenas diagnóstico.
-   */
   if (
     options?.loginHint &&
     account.username.toLowerCase() !==
@@ -561,11 +477,6 @@ export async function getPowerBIToken(
     );
   }
 
-  /*
-   * O Dashboard não abre popup.
-   *
-   * Primeiro tenta sempre o cache/token silencioso.
-   */
   try {
     const result =
       await msal.acquireTokenSilent({
@@ -575,11 +486,13 @@ export async function getPowerBIToken(
         account,
 
         /*
-         * Não força refresh.
-         * O MSAL pode utilizar o token em cache
-         * ou renovar silenciosamente.
+         * Redirect URI dedicada ao fluxo silencioso.
+         *
+         * Caso o projeto ainda não possua /auth-silent,
+         * podemos criar no próximo passo.
          */
-        forceRefresh: false,
+        redirectUri:
+          `${window.location.origin}/auth`,
       });
 
     if (!result.accessToken) {
@@ -617,10 +530,6 @@ export async function getPowerBIToken(
       error?.code ??
       "";
 
-    /*
-     * Esses erros significam que o usuário precisa
-     * de interação para autorizar o recurso Power BI.
-     */
     if (
       errorCode ===
         "interaction_required" ||
@@ -652,16 +561,10 @@ const TOKEN_KEY = (
   config?.tenantId,
 ];
 
-/**
- * Token utilizado pelos dashboards.
- *
- * O Dashboard:
- *
- * 1. Não faz login.
- * 2. Não abre popup.
- * 3. Não usa ssoSilent.
- * 4. Reutiliza a conta Microsoft autenticada no Portal.
- */
+/* -------------------------------------------------------------------------- */
+/* HOOK TOKEN POWER BI                                                        */
+/* -------------------------------------------------------------------------- */
+
 export function usePowerBIToken(
   enabled: boolean,
   loginHint?: string,
@@ -704,10 +607,8 @@ export function usePowerBIToken(
         {
           loginHint,
 
-          /*
-           * Explicitamente não interativo.
-           */
-          interactive: false,
+          interactive:
+            false,
         },
       );
     },
@@ -718,13 +619,6 @@ export function usePowerBIToken(
 /* PREWARM                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Tenta obter antecipadamente o token do Power BI.
- *
- * Nunca abre popup.
- *
- * Nunca inicia login.
- */
 export function usePowerBIPrewarm(
   loginHint?: string,
 ) {
@@ -772,39 +666,26 @@ export function usePowerBIPrewarm(
           "[POWERBI] Prewarm concluído.",
         );
       } catch (error: any) {
-        if (cancelled) {
-          return;
-        }
-
-        const message =
-          error?.message ?? "";
-
         if (
-          message ===
+          error?.message ===
           "entra_login_required"
         ) {
           console.info(
-            "[POWERBI] Prewarm aguardando login Microsoft.",
+            "[POWERBI] Prewarm aguardando sessão Microsoft.",
           );
-
-          return;
-        }
-
-        if (
-          message ===
+        } else if (
+          error?.message ===
           "entra_powerbi_interaction_required"
         ) {
           console.info(
-            "[POWERBI] Prewarm aguardando autorização do Power BI.",
+            "[POWERBI] Prewarm aguardando consentimento do Power BI.",
           );
-
-          return;
+        } else {
+          console.warn(
+            "[POWERBI] Prewarm silencioso não disponível.",
+            error,
+          );
         }
-
-        console.warn(
-          "[POWERBI] Prewarm silencioso não disponível:",
-          error,
-        );
       }
     })();
 
