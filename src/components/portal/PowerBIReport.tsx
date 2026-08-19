@@ -55,8 +55,8 @@ export function PowerBIReport({
   console.log("[PowerBI] Token state:", {
   wantsSdk,
   userEmail: profile?.email,
-  isLoading,
-  isError,
+  tokenLoading,
+  tokenError,
   hasAccessToken: Boolean(token?.accessToken),
   tokenExpiresOn: token?.expiresOn,
 });
