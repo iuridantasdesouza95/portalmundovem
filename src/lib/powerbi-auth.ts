@@ -255,7 +255,6 @@ export async function getMsal(
 }
 
 /* -------------------------------------------------------------------------- */
-/* -------------------------------------------------------------------------- */
 /* LOGIN MICROSOFT                                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -271,86 +270,34 @@ export async function loginWithEntra(
     msal.getAllAccounts(),
   );
 
-  try {
-    console.log(
-      "[ENTRA] Abrindo loginPopup da Microsoft...",
-    );
+  console.log(
+    "[ENTRA] Iniciando login por redirect...",
+  );
 
-    const result = await msal.loginPopup({
-      scopes: [
-        "openid",
-        "profile",
-        "email",
-        "User.Read",
-      ],
+  await msal.loginRedirect({
+    scopes: [
+      "openid",
+      "profile",
+      "email",
+      "User.Read",
+    ],
 
-      prompt: "select_account",
+    prompt: "select_account",
 
-      redirectUri: window.location.origin,
-    });
+    redirectUri: window.location.origin + "/auth",
+  });
 
-    console.log(
-      "[ENTRA] loginPopup concluído.",
-    );
+  /*
+   * loginRedirect interrompe a execução desta página
+   * e redireciona o navegador para a Microsoft.
+   *
+   * Após a autenticação, o navegador retorna para /auth
+   * e o getMsal() processa o handleRedirectPromise().
+   */
 
-    console.log(
-      "[ENTRA] Conta autenticada:",
-      result.account
-        ? {
-            username: result.account.username,
-            name: result.account.name,
-          }
-        : null,
-    );
-
-    if (!result.account) {
-      throw new Error(
-        "O Microsoft Entra ID não retornou uma conta.",
-      );
-    }
-
-    msal.setActiveAccount(
-      result.account,
-    );
-
-    console.log(
-      "[ENTRA] Conta Microsoft definida como ativa.",
-    );
-
-    return {
-      idToken: result.idToken,
-      account: result.account,
-    };
-  } catch (error) {
-    console.error(
-      "[ENTRA] loginPopup FALHOU:",
-      error,
-    );
-
-    if (
-      error &&
-      typeof error === "object" &&
-      "errorCode" in error
-    ) {
-      console.error(
-        "[ENTRA] Código:",
-        (error as { errorCode?: string }).errorCode,
-      );
-    }
-
-    if (
-      error &&
-      typeof error === "object" &&
-      "errorMessage" in error
-    ) {
-      console.error(
-        "[ENTRA] Mensagem:",
-        (error as { errorMessage?: string }).errorMessage,
-      );
-    }
-
-    throw error;
-  }
+  throw new Error(
+    "entra_redirect_started",
+  );
 }
 
 /* -------------------------------------------------------------------------- */
