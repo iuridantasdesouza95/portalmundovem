@@ -52,6 +52,15 @@ export function PowerBIReport({
     error: tokenErrorObject,
   } = usePowerBIToken(wantsSdk, profile?.email);
 
+  console.log("[PowerBI] Token state:", {
+  wantsSdk,
+  userEmail: profile?.email,
+  isLoading,
+  isError,
+  hasAccessToken: Boolean(token?.accessToken),
+  tokenExpiresOn: token?.expiresOn,
+});
+  
   const accessToken = token?.accessToken;
 
   /**
