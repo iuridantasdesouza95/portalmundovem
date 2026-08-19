@@ -72,10 +72,6 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const navigate = useNavigate();
 
-  /* -------------------------------------------------------------------- */
-  /* ESTADO                                                               */
-  /* -------------------------------------------------------------------- */
-
   const [mode, setMode] =
     useState<"login" | "signup">("login");
 
@@ -97,16 +93,9 @@ function AuthPage() {
   const [msLoading, setMsLoading] =
     useState(false);
 
-  /* -------------------------------------------------------------------- */
-  /* INICIALIZAÇÃO                                                        */
-  /*                                                                      */
-  /* IMPORTANTE:                                                          */
-  /* Aqui verificamos somente uma sessão Supabase já existente.           */
-  /*                                                                      */
-  /* Não fazemos login Microsoft automaticamente.                         */
-  /* O Microsoft Entra só será acionado quando o usuário clicar           */
-  /* em "Entrar com Microsoft".                                           */
-  /* -------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ */
+  /* INICIALIZAÇÃO                                                      */
+  /* ------------------------------------------------------------------ */
 
   useEffect(() => {
     let mounted = true;
@@ -120,10 +109,6 @@ function AuthPage() {
         console.log(
           "[AUTH] Inicializando autenticação...",
         );
-
-        /* -------------------------------------------------------------- */
-        /* VERIFICAR SESSÃO SUPABASE                                      */
-        /* -------------------------------------------------------------- */
 
         const {
           data,
@@ -145,16 +130,8 @@ function AuthPage() {
 
         if (data.session) {
           console.log(
-            "[AUTH] Sessão Supabase existente encontrada.",
-          );
-
-          console.log(
-            "[AUTH] Usuário:",
+            "[AUTH] Sessão Supabase existente encontrada:",
             data.session.user.email,
-          );
-
-          console.log(
-            "[AUTH] Redirecionando para /inicio...",
           );
 
           await navigate({
@@ -205,9 +182,9 @@ function AuthPage() {
     };
   }, [navigate]);
 
-  /* -------------------------------------------------------------------- */
-  /* LOGIN / CADASTRO POR E-MAIL                                         */
-  /* -------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ */
+  /* LOGIN / CADASTRO POR E-MAIL                                        */
+  /* ------------------------------------------------------------------ */
 
   async function submit(
     e: FormEvent<HTMLFormElement>,
@@ -221,15 +198,7 @@ function AuthPage() {
     setLoading(true);
 
     try {
-      /* ---------------------------------------------------------------- */
-      /* LOGIN                                                            */
-      /* ---------------------------------------------------------------- */
-
       if (mode === "login") {
-        console.log(
-          "[AUTH] ========================================",
-        );
-
         console.log(
           "[AUTH] Iniciando login por e-mail...",
         );
@@ -250,10 +219,6 @@ function AuthPage() {
           "[AUTH] Login por e-mail concluído.",
         );
 
-        console.log(
-          "[AUTH] Redirecionando para /inicio...",
-        );
-
         await navigate({
           to: "/inicio",
           replace: true,
@@ -261,14 +226,6 @@ function AuthPage() {
 
         return;
       }
-
-      /* ---------------------------------------------------------------- */
-      /* CADASTRO                                                         */
-      /* ---------------------------------------------------------------- */
-
-      console.log(
-        "[AUTH] ========================================",
-      );
 
       console.log(
         "[AUTH] Criando conta por e-mail...",
@@ -298,10 +255,6 @@ function AuthPage() {
       }
 
       if (data.session) {
-        console.log(
-          "[AUTH] Conta criada e sessão iniciada.",
-        );
-
         await navigate({
           to: "/inicio",
           replace: true,
@@ -309,10 +262,6 @@ function AuthPage() {
 
         return;
       }
-
-      console.log(
-        "[AUTH] Conta criada.",
-      );
 
       toast.success(
         "Conta criada. Confirme o e-mail para acessar o portal.",
@@ -333,9 +282,9 @@ function AuthPage() {
     }
   }
 
-  /* -------------------------------------------------------------------- */
-  /* LOGIN MICROSOFT                                                     */
-  /* -------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ */
+  /* LOGIN MICROSOFT                                                    */
+  /* ------------------------------------------------------------------ */
 
   async function microsoft() {
     if (msLoading || loading) {
@@ -354,53 +303,32 @@ function AuthPage() {
       );
 
       /* -------------------------------------------------------------- */
-      /* 1. BUSCAR CONFIGURAÇÃO ENTRA                                   */
+      /* CONFIGURAÇÃO                                                    */
       /* -------------------------------------------------------------- */
-
-      console.log(
-        "[AUTH] Buscando configuração Entra...",
-      );
 
       const config =
         await fetchEntraConfig();
 
-      console.log(
-        "[AUTH] Configuração Entra:",
-        {
-          hasConfig:
-            Boolean(config),
-
-          clientId:
-            config?.clientId
-              ? `${config.clientId.slice(
-                  0,
-                  8,
-                )}...`
-              : null,
-
-          tenantId:
-            config?.tenantId
-              ? `${config.tenantId.slice(
-                  0,
-                  8,
-                )}...`
-              : null,
-        },
-      );
-
       if (!config) {
         throw new Error(
-          "Microsoft Entra ID não está configurado no portal. Verifique azure_client_id e azure_tenant_id na tabela app_settings.",
+          "Microsoft Entra ID não está configurado no portal.",
         );
       }
 
-      /* -------------------------------------------------------------- */
-      /* 2. INICIALIZAR MSAL                                             */
-      /* -------------------------------------------------------------- */
-
       console.log(
-        "[AUTH] Inicializando MSAL...",
+        "[AUTH] Configuração Entra encontrada.",
+        {
+          clientId:
+            `${config.clientId.slice(0, 8)}...`,
+
+          tenantId:
+            `${config.tenantId.slice(0, 8)}...`,
+        },
       );
+
+      /* -------------------------------------------------------------- */
+      /* MSAL                                                            */
+      /* -------------------------------------------------------------- */
 
       const msal =
         await getMsal(config);
@@ -409,14 +337,20 @@ function AuthPage() {
         "[AUTH] MSAL inicializado.",
       );
 
-      /* -------------------------------------------------------------- */
-      /* 3. LOGIN POPUP                                                  */
-      /*                                                                    */
-      /* IMPORTANTE:                                                     */
-      /* Sempre utilizamos loginPopup para iniciar o login pelo botão.   */
-      /* Não tentamos reutilizar silenciosamente uma conta MSAL antiga.  */
-      /* Isso evita o comportamento de login automático inesperado.      */
-      /* -------------------------------------------------------------- */
+      /*
+       * IMPORTANTE:
+       *
+       * O login do portal começa SEMPRE através do botão.
+       *
+       * Não usamos:
+       *
+       * acquireTokenSilent()
+       *
+       * antes do login.
+       *
+       * Isso evita que uma conta Microsoft antiga seja reutilizada
+       * automaticamente.
+       */
 
       console.log(
         "[AUTH] Abrindo loginPopup do Microsoft Entra ID...",
@@ -433,6 +367,9 @@ function AuthPage() {
 
           prompt:
             "select_account",
+
+          redirectUri:
+            `${window.location.origin}/auth`,
         });
 
       console.log(
@@ -440,7 +377,7 @@ function AuthPage() {
       );
 
       /* -------------------------------------------------------------- */
-      /* 4. VALIDAR CONTA MICROSOFT                                      */
+      /* CONTA                                                           */
       /* -------------------------------------------------------------- */
 
       if (!loginResult.account) {
@@ -448,6 +385,10 @@ function AuthPage() {
           "A Microsoft autenticou o usuário, mas não retornou a conta.",
         );
       }
+
+      msal.setActiveAccount(
+        loginResult.account,
+      );
 
       console.log(
         "[AUTH] Conta Microsoft:",
@@ -460,12 +401,8 @@ function AuthPage() {
         },
       );
 
-      msal.setActiveAccount(
-        loginResult.account,
-      );
-
       /* -------------------------------------------------------------- */
-      /* 5. VALIDAR ID TOKEN                                             */
+      /* ID TOKEN                                                        */
       /* -------------------------------------------------------------- */
 
       if (!loginResult.idToken) {
@@ -479,7 +416,7 @@ function AuthPage() {
       );
 
       /* -------------------------------------------------------------- */
-      /* 6. CRIAR SESSÃO DO PORTAL                                      */
+      /* SESSÃO DO PORTAL                                                */
       /* -------------------------------------------------------------- */
 
       await createPortalSession(
@@ -517,14 +454,11 @@ function AuthPage() {
         error?.code ??
         "";
 
-      /* -------------------------------------------------------------- */
-      /* CANCELAMENTOS                                                   */
-      /* -------------------------------------------------------------- */
-
       const cancelledCodes = [
         "user_cancelled",
         "user_canceled",
         "popup_window_error",
+        "interaction_in_progress",
       ];
 
       if (
@@ -533,15 +467,11 @@ function AuthPage() {
         )
       ) {
         console.log(
-          "[AUTH] Login Microsoft cancelado pelo usuário.",
+          "[AUTH] Fluxo Microsoft cancelado/interrompido.",
         );
 
         return;
       }
-
-      /* -------------------------------------------------------------- */
-      /* ERRO NORMAL                                                     */
-      /* -------------------------------------------------------------- */
 
       const message =
         error instanceof Error
@@ -554,24 +484,22 @@ function AuthPage() {
     }
   }
 
-  /* -------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ */
   /* CRIAR SESSÃO DO PORTAL                                             */
-  /* -------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ */
 
   async function createPortalSession(
     idToken: string,
   ) {
     console.log(
-      "[AUTH] ========================================",
+      "[AUTH] Criando sessão do portal...",
     );
 
-    console.log(
-      "[AUTH] Criando sessão do portal a partir do Microsoft Entra...",
-    );
-
-    /* ---------------------------------------------------------------- */
-    /* ENVIAR ID TOKEN PARA O SERVIDOR                                  */
-    /* ---------------------------------------------------------------- */
+    /*
+     * O ID Token sai do browser e vai para a Server Function.
+     *
+     * A validação real do token acontece no servidor.
+     */
 
     const {
       email: portalEmail,
@@ -583,19 +511,11 @@ function AuthPage() {
         },
       });
 
-    /* ---------------------------------------------------------------- */
-    /* VALIDAR E-MAIL                                                   */
-    /* ---------------------------------------------------------------- */
-
     if (!portalEmail) {
       throw new Error(
         "O servidor não retornou o e-mail da conta Microsoft.",
       );
     }
-
-    /* ---------------------------------------------------------------- */
-    /* VALIDAR TOKEN HASH                                                */
-    /* ---------------------------------------------------------------- */
 
     if (!tokenHash) {
       throw new Error(
@@ -608,13 +528,9 @@ function AuthPage() {
       portalEmail,
     );
 
-    /* ---------------------------------------------------------------- */
-    /* CRIAR SESSÃO SUPABASE                                             */
-    /* ---------------------------------------------------------------- */
-
-    console.log(
-      "[AUTH] Criando sessão Supabase...",
-    );
+    /* -------------------------------------------------------------- */
+    /* CRIAR SESSÃO SUPABASE                                            */
+    /* -------------------------------------------------------------- */
 
     const {
       error: verifyError,
@@ -643,9 +559,9 @@ function AuthPage() {
       "[AUTH] Sessão Supabase criada.",
     );
 
-    /* ---------------------------------------------------------------- */
-    /* CONFIRMAR SESSÃO                                                  */
-    /* ---------------------------------------------------------------- */
+    /* -------------------------------------------------------------- */
+    /* CONFIRMAR                                                        */
+    /* -------------------------------------------------------------- */
 
     const {
       data:
@@ -653,38 +569,20 @@ function AuthPage() {
     } =
       await supabase.auth.getSession();
 
-    if (
-      !sessionData.session
-    ) {
+    if (!sessionData.session) {
       throw new Error(
         "O login Microsoft foi concluído, mas a sessão do portal não foi criada.",
       );
     }
 
     console.log(
-      "[AUTH] Sessão Supabase confirmada.",
-    );
-
-    console.log(
-      "[AUTH] Usuário autenticado:",
+      "[AUTH] Sessão Supabase confirmada:",
       sessionData.session.user.email,
     );
 
-    /* ---------------------------------------------------------------- */
-    /* REDIRECIONAR                                                      */
-    /* ---------------------------------------------------------------- */
-
-    console.log(
-      "[AUTH] Login Microsoft concluído com sucesso.",
-    );
-
-    console.log(
-      "[AUTH] Redirecionando para /inicio...",
-    );
-
-    console.log(
-      "[AUTH] ========================================",
-    );
+    /* -------------------------------------------------------------- */
+    /* REDIRECIONAR                                                     */
+    /* -------------------------------------------------------------- */
 
     await navigate({
       to: "/inicio",
@@ -692,9 +590,9 @@ function AuthPage() {
     });
   }
 
-  /* -------------------------------------------------------------------- */
-  /* LOGIN GOOGLE                                                        */
-  /* -------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ */
+  /* GOOGLE                                                             */
+  /* ------------------------------------------------------------------ */
 
   async function google() {
     if (loading || msLoading) {
@@ -704,10 +602,6 @@ function AuthPage() {
     setMsLoading(true);
 
     try {
-      console.log(
-        "[AUTH] ========================================",
-      );
-
       console.log(
         "[AUTH] Iniciando login Google...",
       );
@@ -742,10 +636,6 @@ function AuthPage() {
         return;
       }
 
-      console.log(
-        "[AUTH] Login Google concluído.",
-      );
-
       await navigate({
         to: "/inicio",
         replace: true,
@@ -766,16 +656,12 @@ function AuthPage() {
     }
   }
 
-  /* -------------------------------------------------------------------- */
-  /* INTERFACE                                                            */
-  /* -------------------------------------------------------------------- */
+  /* ------------------------------------------------------------------ */
+  /* INTERFACE                                                          */
+  /* ------------------------------------------------------------------ */
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
-
-      {/* ================================================================ */}
-      {/* LADO ESQUERDO                                                    */}
-      {/* ================================================================ */}
 
       <div className="relative hidden flex-col justify-between overflow-hidden bg-primary p-12 lg:flex">
 
@@ -786,7 +672,6 @@ function AuthPage() {
         </span>
 
         <div className="relative max-w-md">
-
           <h2 className="font-display text-4xl font-semibold leading-tight text-primary-foreground">
             Todos os indicadores da companhia em um só lugar.
           </h2>
@@ -796,26 +681,16 @@ function AuthPage() {
             Service, organizados por área, com
             acesso controlado por perfil.
           </p>
-
         </div>
 
         <p className="relative text-xs text-primary-foreground/60">
           Ambiente corporativo · Acesso monitorado
         </p>
-
       </div>
-
-      {/* ================================================================ */}
-      {/* LADO DIREITO                                                     */}
-      {/* ================================================================ */}
 
       <div className="flex items-center justify-center px-6 py-16">
 
         <div className="w-full max-w-sm">
-
-          {/* ------------------------------------------------------------ */}
-          {/* TÍTULO                                                        */}
-          {/* ------------------------------------------------------------ */}
 
           <h1 className="font-display text-2xl font-semibold">
             {mode === "login"
@@ -829,10 +704,6 @@ function AuthPage() {
             utilizada para acessar os dashboards
             do Power BI.
           </p>
-
-          {/* ------------------------------------------------------------ */}
-          {/* MICROSOFT                                                     */}
-          {/* ------------------------------------------------------------ */}
 
           <Button
             className="mt-8 w-full"
@@ -851,23 +722,11 @@ function AuthPage() {
             Login único com Microsoft Entra ID.
           </p>
 
-          {/* ------------------------------------------------------------ */}
-          {/* SEPARADOR                                                     */}
-          {/* ------------------------------------------------------------ */}
-
           <div className="my-6 flex items-center gap-3 text-[11px] uppercase tracking-wider text-muted-foreground">
-
             <span className="h-px flex-1 bg-border" />
-
             ou
-
             <span className="h-px flex-1 bg-border" />
-
           </div>
-
-          {/* ------------------------------------------------------------ */}
-          {/* GOOGLE                                                        */}
-          {/* ------------------------------------------------------------ */}
 
           <Button
             variant="outline"
@@ -881,10 +740,6 @@ function AuthPage() {
             Continuar com Google
           </Button>
 
-          {/* ------------------------------------------------------------ */}
-          {/* E-MAIL                                                        */}
-          {/* ------------------------------------------------------------ */}
-
           {!showEmail ? (
             <button
               type="button"
@@ -897,22 +752,13 @@ function AuthPage() {
             </button>
           ) : (
             <>
-              {/* -------------------------------------------------------- */}
-              {/* FORMULÁRIO                                                */}
-              {/* -------------------------------------------------------- */}
-
               <form
                 onSubmit={submit}
                 className="mt-6 space-y-4"
               >
 
-                {/* ------------------------------------------------------ */}
-                {/* NOME                                                     */}
-                {/* ------------------------------------------------------ */}
-
                 {mode === "signup" && (
                   <div className="space-y-1.5">
-
                     <Label htmlFor="name">
                       Nome completo
                     </Label>
@@ -929,16 +775,10 @@ function AuthPage() {
                       autoComplete="name"
                       required
                     />
-
                   </div>
                 )}
 
-                {/* ------------------------------------------------------ */}
-                {/* E-MAIL                                                   */}
-                {/* ------------------------------------------------------ */}
-
                 <div className="space-y-1.5">
-
                   <Label htmlFor="email">
                     E-mail corporativo
                   </Label>
@@ -955,15 +795,9 @@ function AuthPage() {
                     autoComplete="email"
                     required
                   />
-
                 </div>
 
-                {/* ------------------------------------------------------ */}
-                {/* SENHA                                                    */}
-                {/* ------------------------------------------------------ */}
-
                 <div className="space-y-1.5">
-
                   <Label htmlFor="password">
                     Senha
                   </Label>
@@ -985,12 +819,7 @@ function AuthPage() {
                     required
                     minLength={6}
                   />
-
                 </div>
-
-                {/* ------------------------------------------------------ */}
-                {/* BOTÃO                                                    */}
-                {/* ------------------------------------------------------ */}
 
                 <Button
                   type="submit"
@@ -1007,12 +836,7 @@ function AuthPage() {
                       ? "Entrar"
                       : "Criar acesso"}
                 </Button>
-
               </form>
-
-              {/* -------------------------------------------------------- */}
-              {/* ALTERNAR LOGIN/CADASTRO                                   */}
-              {/* -------------------------------------------------------- */}
 
               <button
                 type="button"
@@ -1029,14 +853,10 @@ function AuthPage() {
                   ? "Não tem acesso? Criar conta"
                   : "Já tenho acesso"}
               </button>
-
             </>
           )}
-
         </div>
-
       </div>
-
     </div>
   );
 }
