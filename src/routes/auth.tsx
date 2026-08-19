@@ -15,7 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 import {
   fetchEntraConfig,
-  getMsal,
+  loginWithEntra,
 } from "@/lib/powerbi-auth";
 
 import {
