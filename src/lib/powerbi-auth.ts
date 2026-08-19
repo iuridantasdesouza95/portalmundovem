@@ -1,8 +1,10 @@
 import { useEffect } from "react";
+
 import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+
 import { supabase } from "@/integrations/supabase/client";
 
 /* -------------------------------------------------------------------------- */
@@ -30,54 +32,70 @@ export type PowerBIToken = {
 export function useEntraConfig() {
   return useQuery({
     queryKey: ["entra-config"],
+
     staleTime: 5 * 60_000,
 
-    queryFn: async (): Promise<EntraConfig | null> => {
-      const { data, error } = await supabase
-        .from("app_settings")
-        .select("key, value")
-        .in("key", [
-          "azure_client_id",
-          "azure_tenant_id",
-        ]);
-
-      if (error) {
-        console.error(
-          "[ENTRA] Erro ao carregar configuração:",
+    queryFn:
+      async (): Promise<EntraConfig | null> => {
+        const {
+          data,
           error,
-        );
+        } =
+          await supabase
+            .from("app_settings")
+            .select("key, value")
+            .in("key", [
+              "azure_client_id",
+              "azure_tenant_id",
+            ]);
 
-        throw error;
-      }
+        if (error) {
+          console.error(
+            "[ENTRA] Erro ao carregar configuração:",
+            error,
+          );
 
-      const map = Object.fromEntries(
-        (data ?? []).map((setting) => [
-          setting.key,
-          setting.value,
-        ]),
-      );
+          throw error;
+        }
 
-      const clientId = String(
-        map["azure_client_id"] ?? "",
-      ).trim();
+        const map =
+          Object.fromEntries(
+            (data ?? []).map(
+              (setting) => [
+                setting.key,
+                setting.value,
+              ],
+            ),
+          );
 
-      const tenantId = String(
-        map["azure_tenant_id"] ?? "",
-      ).trim();
+        const clientId =
+          String(
+            map["azure_client_id"] ??
+              "",
+          ).trim();
 
-      if (!clientId || !tenantId) {
-        console.warn(
-          "[ENTRA] Client ID ou Tenant ID não configurado.",
-        );
+        const tenantId =
+          String(
+            map["azure_tenant_id"] ??
+              "",
+          ).trim();
 
-        return null;
-      }
+        if (
+          !clientId ||
+          !tenantId
+        ) {
+          console.warn(
+            "[ENTRA] Client ID ou Tenant ID não configurado.",
+          );
 
-      return {
-        clientId,
-        tenantId,
-      };
-    },
+          return null;
+        }
+
+        return {
+          clientId,
+          tenantId,
+        };
+      },
   });
 }
 
@@ -86,20 +104,21 @@ export function useEntraConfig() {
 /* -------------------------------------------------------------------------- */
 
 export async function fetchEntraConfig(): Promise<EntraConfig | null> {
-  console.log("[ENTRA] Buscando configuração...");
+  console.log(
+    "[ENTRA] Buscando configuração...",
+  );
 
-  const { data, error } = await supabase
-    .from("app_settings")
-    .select("key, value")
-    .in("key", [
-      "azure_client_id",
-      "azure_tenant_id",
-    ]);
-
-  console.log("[ENTRA] Resultado da consulta:", {
+  const {
     data,
     error,
-  });
+  } =
+    await supabase
+      .from("app_settings")
+      .select("key, value")
+      .in("key", [
+        "azure_client_id",
+        "azure_tenant_id",
+      ]);
 
   if (error) {
     console.error(
@@ -110,31 +129,43 @@ export async function fetchEntraConfig(): Promise<EntraConfig | null> {
     throw error;
   }
 
-  const map = Object.fromEntries(
-    (data ?? []).map((setting) => [
-      setting.key,
-      setting.value,
-    ]),
-  );
-
-  const clientId = String(
-    map["azure_client_id"] ?? "",
-  ).trim();
-
-  const tenantId = String(
-    map["azure_tenant_id"] ?? "",
-  ).trim();
-
-  console.log("[ENTRA] Configuração encontrada:", {
-    hasClientId: Boolean(clientId),
-    hasTenantId: Boolean(tenantId),
-  });
-
-  if (!clientId || !tenantId) {
-    console.error(
-      "[ENTRA] Client ID ou Tenant ID não foi encontrado.",
+  const map =
+    Object.fromEntries(
+      (data ?? []).map(
+        (setting) => [
+          setting.key,
+          setting.value,
+        ],
+      ),
     );
 
+  const clientId =
+    String(
+      map["azure_client_id"] ??
+        "",
+    ).trim();
+
+  const tenantId =
+    String(
+      map["azure_tenant_id"] ??
+        "",
+    ).trim();
+
+  console.log(
+    "[ENTRA] Configuração encontrada:",
+    {
+      hasClientId:
+        Boolean(clientId),
+
+      hasTenantId:
+        Boolean(tenantId),
+    },
+  );
+
+  if (
+    !clientId ||
+    !tenantId
+  ) {
     return null;
   }
 
@@ -162,76 +193,75 @@ export async function getMsal(
   const key =
     `${config.clientId}:${config.tenantId}`;
 
-  if (!msalPromise || msalKey !== key) {
+  if (
+    !msalPromise ||
+    msalKey !== key
+  ) {
     msalKey = key;
 
-    msalPromise = (async () => {
-      const {
-        PublicClientApplication,
-      } = await import("@azure/msal-browser");
+    msalPromise =
+      (async () => {
+        const {
+          PublicClientApplication,
+        } =
+          await import(
+            "@azure/msal-browser"
+          );
 
-      const instance =
-        new PublicClientApplication({
-          auth: {
-            clientId: config.clientId,
+        const instance =
+          new PublicClientApplication({
+            auth: {
+              clientId:
+                config.clientId,
 
-            authority:
-              `https://login.microsoftonline.com/${config.tenantId}`,
+              authority:
+                `https://login.microsoftonline.com/${config.tenantId}`,
 
-            /*
-             * IMPORTANTE:
-             *
-             * Para loginPopup, esta URL deve ser uma
-             * redirect URI registrada no App Registration.
-             *
-             * Estamos utilizando /auth porque é a página
-             * principal de autenticação do portal.
-             */
-            redirectUri:
-              `${window.location.origin}/auth`,
+              redirectUri:
+                `${window.location.origin}/auth`,
 
-            postLogoutRedirectUri:
-              `${window.location.origin}/auth`,
-          },
+              postLogoutRedirectUri:
+                `${window.location.origin}/auth`,
+            },
 
-          cache: {
-            cacheLocation:
-              "localStorage",
+            cache: {
+              cacheLocation:
+                "localStorage",
 
-            storeAuthStateInCookie:
-              false,
-          },
-        });
+              storeAuthStateInCookie:
+                false,
+            },
+          });
 
-      await instance.initialize();
+        await instance.initialize();
 
-      /*
-       * Não usamos loginRedirect.
-       *
-       * Portanto não dependemos do handleRedirectPromise()
-       * para o login principal.
-       */
+        console.info(
+          "[ENTRA] MSAL inicializado.",
+        );
 
-      const accounts =
-        instance.getAllAccounts();
+        const accounts =
+          instance.getAllAccounts();
 
-      console.info(
-        "[ENTRA] MSAL inicializado.",
-      );
+        console.info(
+          "[ENTRA] Contas MSAL disponíveis:",
+          accounts.map(
+            (account) =>
+              account.username,
+          ),
+        );
 
-      console.info(
-        "[ENTRA] Contas MSAL disponíveis:",
-        accounts.map(
-          (account) =>
-            account.username,
-        ),
-      );
+        /*
+         * Não iniciamos login aqui.
+         *
+         * Apenas registramos uma conta existente
+         * como ativa para que o Power BI possa
+         * posteriormente tentar acquireTokenSilent().
+         */
 
-      if (accounts.length > 0) {
-        const active =
-          instance.getActiveAccount();
-
-        if (!active) {
+        if (
+          accounts.length > 0 &&
+          !instance.getActiveAccount()
+        ) {
           instance.setActiveAccount(
             accounts[0],
           );
@@ -241,10 +271,9 @@ export async function getMsal(
             accounts[0].username,
           );
         }
-      }
 
-      return instance;
-    })();
+        return instance;
+      })();
   }
 
   return msalPromise;
@@ -257,78 +286,11 @@ export async function getMsal(
 export async function loginWithEntra(
   config: EntraConfig,
 ) {
-  console.log(
-    "[ENTRA] Iniciando login Microsoft...",
-  );
-
   const msal =
     await getMsal(config);
 
-  const existingAccount =
-    msal.getActiveAccount() ??
-    msal.getAllAccounts()[0] ??
-    null;
-
-  /*
-   * Se já existe uma conta no cache, reutilizamos.
-   */
-  if (existingAccount) {
-    console.info(
-      "[ENTRA] Conta Microsoft já existente:",
-      existingAccount.username,
-    );
-
-    msal.setActiveAccount(
-      existingAccount,
-    );
-
-    try {
-      const token =
-        await msal.acquireTokenSilent({
-          scopes: [
-            "openid",
-            "profile",
-            "email",
-            "User.Read",
-          ],
-          account: existingAccount,
-        });
-
-      if (token.idToken) {
-        console.info(
-          "[ENTRA] Token existente reutilizado.",
-        );
-
-        return {
-          idToken:
-            token.idToken,
-
-          account:
-            token.account ??
-            existingAccount,
-        };
-      }
-    } catch (error) {
-      console.info(
-        "[ENTRA] Não foi possível reutilizar a sessão silenciosamente. Abrindo popup...",
-        error,
-      );
-    }
-  }
-
-  /*
-   * IMPORTANTE:
-   *
-   * Usamos loginPopup em vez de loginRedirect.
-   *
-   * Isso resolve o erro:
-   *
-   * redirect_in_iframe
-   *
-   * que ocorre no preview do Lovable.
-   */
   console.log(
-    "[ENTRA] Abrindo loginPopup da Microsoft...",
+    "[ENTRA] Abrindo loginPopup...",
   );
 
   const response =
@@ -353,23 +315,11 @@ export async function loginWithEntra(
     );
   }
 
-  const account =
-    response.account;
-
-  if (!account) {
+  if (!response.account) {
     throw new Error(
       "A Microsoft autenticou o usuário, mas nenhuma conta foi retornada.",
     );
   }
-
-  msal.setActiveAccount(
-    account,
-  );
-
-  console.info(
-    "[ENTRA] Login Microsoft concluído:",
-    account.username,
-  );
 
   if (!response.idToken) {
     throw new Error(
@@ -377,11 +327,21 @@ export async function loginWithEntra(
     );
   }
 
+  msal.setActiveAccount(
+    response.account,
+  );
+
+  console.info(
+    "[ENTRA] Login Microsoft concluído:",
+    response.account.username,
+  );
+
   return {
     idToken:
       response.idToken,
 
-    account,
+    account:
+      response.account,
   };
 }
 
@@ -389,10 +349,12 @@ export async function loginWithEntra(
 /* TOKEN POWER BI                                                             */
 /* -------------------------------------------------------------------------- */
 
-function wrapPowerBIToken(result: {
-  accessToken: string;
-  expiresOn: Date | null;
-}): PowerBIToken {
+function wrapPowerBIToken(
+  result: {
+    accessToken: string;
+    expiresOn: Date | null;
+  },
+): PowerBIToken {
   return {
     accessToken:
       result.accessToken,
@@ -417,7 +379,7 @@ export async function getPowerBIToken(
   },
 ): Promise<PowerBIToken> {
   console.info(
-    "[POWERBI] Obtendo Access Token silenciosamente...",
+    "[POWERBI] Obtendo Access Token...",
   );
 
   const msal =
@@ -485,12 +447,6 @@ export async function getPowerBIToken(
 
         account,
 
-        /*
-         * Redirect URI dedicada ao fluxo silencioso.
-         *
-         * Caso o projeto ainda não possua /auth-silent,
-         * podemos criar no próximo passo.
-         */
         redirectUri:
           `${window.location.origin}/auth`,
       });
@@ -503,12 +459,6 @@ export async function getPowerBIToken(
 
     console.info(
       "[POWERBI] Access Token obtido silenciosamente.",
-    );
-
-    console.info(
-      "[POWERBI] Conta:",
-      result.account?.username ??
-        account.username,
     );
 
     console.info(
@@ -571,7 +521,8 @@ export function usePowerBIToken(
 ) {
   const {
     data: config,
-  } = useEntraConfig();
+  } =
+    useEntraConfig();
 
   return useQuery({
     queryKey:
@@ -595,23 +546,24 @@ export function usePowerBIToken(
     refetchOnWindowFocus:
       true,
 
-    queryFn: async () => {
-      if (!config) {
-        throw new Error(
-          "Entra ID não configurado.",
+    queryFn:
+      async () => {
+        if (!config) {
+          throw new Error(
+            "Entra ID não configurado.",
+          );
+        }
+
+        return getPowerBIToken(
+          config,
+          {
+            loginHint,
+
+            interactive:
+              false,
+          },
         );
-      }
-
-      return getPowerBIToken(
-        config,
-        {
-          loginHint,
-
-          interactive:
-            false,
-        },
-      );
-    },
+      },
   });
 }
 
@@ -624,7 +576,8 @@ export function usePowerBIPrewarm(
 ) {
   const {
     data: config,
-  } = useEntraConfig();
+  } =
+    useEntraConfig();
 
   const queryClient =
     useQueryClient();
