@@ -38,7 +38,19 @@ export function useEntraConfig() {
 let msalPromise: Promise<import("@azure/msal-browser").PublicClientApplication> | null = null;
 let msalKey = "";
 
-async function getMsal(config: EntraConfig) {
+export async function fetchEntraConfig(): Promise<EntraConfig | null> {
+  const { data } = await supabase
+    .from("app_settings")
+    .select("key, value")
+    .in("key", ["azure_client_id", "azure_tenant_id"]);
+  const map = Object.fromEntries((data ?? []).map((s) => [s.key, s.value]));
+  const clientId = (map["azure_client_id"] ?? "").trim();
+  const tenantId = (map["azure_tenant_id"] ?? "").trim();
+  if (!clientId || !tenantId) return null;
+  return { clientId, tenantId };
+}
+
+export async function getMsal(config: EntraConfig) {
   const key = `${config.clientId}:${config.tenantId}`;
   if (!msalPromise || msalKey !== key) {
     msalKey = key;
