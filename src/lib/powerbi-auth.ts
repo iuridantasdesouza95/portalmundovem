@@ -142,13 +142,13 @@ let msalPromise:
 let msalKey = "";
 
 /**
- * Cria/reutiliza a instância MSAL.
+ * Cria ou reutiliza a mesma instância MSAL durante toda a sessão
+ * do Portal.
  *
- * A sessão fica armazenada no localStorage.
+ * IMPORTANTE:
+ * O login Microsoft acontece no /auth.
  *
- * O redirect utilizado pelo MSAL é uma página dedicada,
- * evitando que o roteador principal do Portal interfira
- * no retorno da autenticação.
+ * O Dashboard NÃO deve criar uma nova sessão.
  */
 export async function getMsal(
   config: EntraConfig,
@@ -164,19 +164,16 @@ export async function getMsal(
         PublicClientApplication,
       } = await import("@azure/msal-browser");
 
-      const redirectUri =
-        `${window.location.origin}/auth-redirect.html`;
-
       const instance =
         new PublicClientApplication({
           auth: {
-            clientId:
-              config.clientId,
+            clientId: config.clientId,
 
             authority:
               `https://login.microsoftonline.com/${config.tenantId}`,
 
-            redirectUri,
+            redirectUri:
+              window.location.origin,
 
             postLogoutRedirectUri:
               window.location.origin,
@@ -193,6 +190,9 @@ export async function getMsal(
 
       await instance.initialize();
 
+      /*
+       * Processa eventual retorno de autenticação.
+       */
       try {
         await instance.handleRedirectPromise();
       } catch (error) {
@@ -202,11 +202,14 @@ export async function getMsal(
         );
       }
 
+      /*
+       * Recupera a conta Microsoft que já entrou no Portal.
+       */
       const accounts =
         instance.getAllAccounts();
 
-      console.log(
-        "[ENTRA] Contas encontradas no cache:",
+      console.info(
+        "[ENTRA] Contas MSAL disponíveis:",
         accounts.map(
           (account) =>
             account.username,
@@ -214,9 +217,19 @@ export async function getMsal(
       );
 
       if (accounts.length > 0) {
-        instance.setActiveAccount(
-          accounts[0],
-        );
+        const active =
+          instance.getActiveAccount();
+
+        if (!active) {
+          instance.setActiveAccount(
+            accounts[0],
+          );
+
+          console.info(
+            "[ENTRA] Conta MSAL definida como ativa:",
+            accounts[0].username,
+          );
+        }
       }
 
       return instance;
@@ -233,13 +246,22 @@ export async function getMsal(
 /**
  * Login principal do Portal.
  *
- * Esta função deve ser chamada por uma ação explícita
- * do usuário, como o botão "Entrar com Microsoft".
+ * Este login acontece somente na tela /auth.
+ *
+ * Depois que o usuário entra:
+ *
+ * Microsoft Entra
+ *      ↓
+ * MSAL mantém a conta
+ *      ↓
+ * Supabase cria a sessão do Portal
+ *
+ * O Dashboard reutiliza essa mesma sessão.
  */
 export async function loginWithEntra(
   config: EntraConfig,
 ) {
-  console.log(
+  console.info(
     "[ENTRA] Iniciando login Microsoft...",
   );
 
@@ -265,11 +287,16 @@ export async function loginWithEntra(
     );
   }
 
+  /*
+   * MUITO IMPORTANTE:
+   * mantém exatamente a mesma conta que acabou
+   * de fazer login como conta ativa do MSAL.
+   */
   msal.setActiveAccount(
     result.account,
   );
 
-  console.log(
+  console.info(
     "[ENTRA] Login Microsoft concluído:",
     result.account.username,
   );
@@ -284,7 +311,7 @@ export async function loginWithEntra(
 }
 
 /* -------------------------------------------------------------------------- */
-/* TOKEN                                                                      */
+/* TOKEN POWER BI                                                             */
 /* -------------------------------------------------------------------------- */
 
 function wrapPowerBIToken(result: {
@@ -303,26 +330,26 @@ function wrapPowerBIToken(result: {
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* TOKEN POWER BI                                                             */
-/* -------------------------------------------------------------------------- */
-
 /**
- * Obtém o Access Token delegado da API do Power BI.
- *
- * Fluxo:
- *
- * 1. Procura uma conta Microsoft já autenticada.
- * 2. Tenta acquireTokenSilent.
- * 3. Se não houver conta, informa que o login é necessário.
- * 4. Se o token exigir interação:
- *      - interactive=false → não abre popup
- *      - interactive=true  → permite acquireTokenPopup
+ * Obtém o Access Token específico do Power BI.
  *
  * IMPORTANTE:
  *
- * O Dashboard não deve iniciar login Microsoft automaticamente.
- * O login deve acontecer pelo fluxo de autenticação do Portal.
+ * NÃO faz login.
+ * NÃO abre popup.
+ * NÃO usa ssoSilent.
+ *
+ * O usuário já deve estar autenticado no Portal.
+ *
+ * Fluxo:
+ *
+ * sessão Microsoft existente
+ *          ↓
+ * getActiveAccount()
+ *          ↓
+ * acquireTokenSilent()
+ *          ↓
+ * Access Token Power BI
  */
 export async function getPowerBIToken(
   config: EntraConfig,
@@ -331,20 +358,22 @@ export async function getPowerBIToken(
     interactive?: boolean;
   },
 ): Promise<PowerBIToken> {
-  console.log(
-    "[POWERBI] Obtendo Access Token...",
+  console.info(
+    "[POWERBI] Obtendo Access Token silenciosamente...",
   );
 
   const msal =
     await getMsal(config);
 
-  /* ---------------------------------------------------------------------- */
-  /* LOCALIZA CONTA                                                         */
-  /* ---------------------------------------------------------------------- */
-
+  /*
+   * Primeiro tenta a conta ativa.
+   */
   let account =
     msal.getActiveAccount();
 
+  /*
+   * Se não houver conta ativa, procura no cache.
+   */
   if (!account) {
     const accounts =
       msal.getAllAccounts();
@@ -356,16 +385,20 @@ export async function getPowerBIToken(
       msal.setActiveAccount(
         account,
       );
+
+      console.info(
+        "[POWERBI] Conta encontrada no cache:",
+        account.username,
+      );
     }
   }
 
-  /* ---------------------------------------------------------------------- */
-  /* SEM CONTA                                                              */
-  /* ---------------------------------------------------------------------- */
-
+  /*
+   * O Dashboard não deve fazer login.
+   */
   if (!account) {
     console.warn(
-      "[POWERBI] Nenhuma sessão Microsoft encontrada.",
+      "[POWERBI] Nenhuma sessão Microsoft disponível.",
     );
 
     throw new Error(
@@ -373,115 +406,62 @@ export async function getPowerBIToken(
     );
   }
 
-  console.log(
-    "[POWERBI] Conta Microsoft encontrada:",
+  console.info(
+    "[POWERBI] Conta Microsoft utilizada:",
     account.username,
   );
 
-  /* ---------------------------------------------------------------------- */
-  /* TOKEN SILENCIOSO                                                       */
-  /* ---------------------------------------------------------------------- */
+  /*
+   * O loginHint é apenas diagnóstico neste ponto.
+   * Não abrimos popup com ele.
+   */
+  if (
+    options?.loginHint &&
+    account.username.toLowerCase() !==
+      options.loginHint.toLowerCase()
+  ) {
+    console.warn(
+      "[POWERBI] Login hint diferente da conta MSAL ativa.",
+      {
+        loginHint:
+          options.loginHint,
 
-  try {
-    console.log(
-      "[POWERBI] Tentando acquireTokenSilent...",
+        account:
+          account.username,
+      },
     );
+  }
 
+  /*
+   * ÚNICA tentativa para o Dashboard:
+   * acquireTokenSilent.
+   */
+  try {
     const result =
       await msal.acquireTokenSilent({
         scopes:
           POWERBI_SCOPES,
 
         account,
-
-        ...(options?.loginHint
-          ? {
-              loginHint:
-                options.loginHint,
-            }
-          : {}),
       });
 
-    console.log(
-      "[POWERBI] Access Token Power BI obtido silenciosamente.",
-    );
-
-    console.log(
-      "[POWERBI] Conta:",
-      result.account?.username,
-    );
-
-    console.log(
-      "[POWERBI] Expira em:",
-      result.expiresOn,
-    );
-
-    return wrapPowerBIToken(
-      result,
-    );
-  } catch (error) {
-    console.warn(
-      "[POWERBI] acquireTokenSilent não conseguiu obter o token:",
-      error,
-    );
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* PREWARM / NÃO INTERATIVO                                               */
-  /* ---------------------------------------------------------------------- */
-
-  if (
-    options?.interactive === false
-  ) {
-    console.info(
-      "[POWERBI] Token Power BI requer interação.",
-    );
-
-    throw new Error(
-      "entra_interaction_required",
-    );
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* INTERAÇÃO                                                              */
-  /* ---------------------------------------------------------------------- */
-
-  console.log(
-    "[POWERBI] Token Power BI requer autenticação interativa.",
-  );
-
-  try {
-    const result =
-      await msal.acquireTokenPopup({
-        scopes:
-          POWERBI_SCOPES,
-
-        account,
-
-        ...(options?.loginHint
-          ? {
-              loginHint:
-                options.loginHint,
-            }
-          : {}),
-      });
-
-    if (result.account) {
-      msal.setActiveAccount(
-        result.account,
+    if (!result.accessToken) {
+      throw new Error(
+        "O Microsoft Entra ID não retornou um Access Token do Power BI.",
       );
     }
 
-    console.log(
-      "[POWERBI] Access Token Power BI obtido via popup.",
+    console.info(
+      "[POWERBI] Access Token obtido silenciosamente.",
     );
 
-    console.log(
+    console.info(
       "[POWERBI] Conta:",
-      result.account?.username,
+      result.account?.username ??
+        account.username,
     );
 
-    console.log(
+    console.info(
       "[POWERBI] Expira em:",
       result.expiresOn,
     );
@@ -489,11 +469,37 @@ export async function getPowerBIToken(
     return wrapPowerBIToken(
       result,
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error(
-      "[POWERBI] acquireTokenPopup FALHOU:",
+      "[POWERBI] acquireTokenSilent falhou:",
       error,
     );
+
+    /*
+     * Não abrimos popup aqui.
+     *
+     * Se houver necessidade de consentimento/interação,
+     * o fluxo deverá ser resolvido no login do Portal.
+     */
+    const errorCode =
+      error?.errorCode ??
+      error?.code ??
+      "";
+
+    if (
+      errorCode ===
+        "interaction_required" ||
+      errorCode ===
+        "consent_required" ||
+      errorCode ===
+        "login_required" ||
+      errorCode ===
+        "no_tokens_found"
+    ) {
+      throw new Error(
+        "entra_powerbi_interaction_required",
+      );
+    }
 
     throw error;
   }
@@ -512,13 +518,13 @@ const TOKEN_KEY = (
 ];
 
 /**
- * Token Power BI com cache e renovação automática.
+ * Token Power BI utilizado pelo Dashboard.
  *
  * IMPORTANTE:
- * O hook não deve iniciar o login Microsoft.
+ * interactive NÃO é utilizado aqui.
  *
- * Se não houver sessão ou consentimento,
- * o erro será retornado para a interface.
+ * O Dashboard apenas reutiliza a sessão Microsoft
+ * criada no /auth.
  */
 export function usePowerBIToken(
   enabled: boolean,
@@ -526,8 +532,7 @@ export function usePowerBIToken(
 ) {
   const {
     data: config,
-  } =
-    useEntraConfig();
+  } = useEntraConfig();
 
   return useQuery({
     queryKey:
@@ -564,10 +569,7 @@ export function usePowerBIToken(
           loginHint,
 
           /*
-           * IMPORTANTE:
-           *
-           * O Dashboard não deve abrir
-           * popup automaticamente.
+           * O Dashboard nunca abre popup.
            */
           interactive: false,
         },
@@ -581,18 +583,22 @@ export function usePowerBIToken(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Tenta obter silenciosamente o token Power BI
- * depois que o usuário já estiver autenticado.
+ * Pré-aquece o token do Power BI.
  *
- * NUNCA abre popup.
+ * O Prewarm:
+ *
+ * - NÃO faz login;
+ * - NÃO abre popup;
+ * - NÃO usa ssoSilent;
+ * - apenas tenta aproveitar uma sessão Microsoft
+ *   que já existe.
  */
 export function usePowerBIPrewarm(
   loginHint?: string,
 ) {
   const {
     data: config,
-  } =
-    useEntraConfig();
+  } = useEntraConfig();
 
   const queryClient =
     useQueryClient();
@@ -602,50 +608,69 @@ export function usePowerBIPrewarm(
       return;
     }
 
-    let cancelled =
-      false;
+    let cancelled = false;
 
     void (async () => {
       try {
-        console.log(
+        console.info(
           "[POWERBI] Prewarm iniciado.",
         );
 
+        /*
+         * interactive=false:
+         * nunca abre popup.
+         */
         const token =
           await getPowerBIToken(
             config,
             {
               loginHint,
 
-              /*
-               * Prewarm nunca pode abrir
-               * uma janela de autenticação.
-               */
-              interactive: false,
+              interactive:
+                false,
             },
           );
 
-        if (!cancelled) {
-          queryClient.setQueryData(
-            TOKEN_KEY(config),
-            token,
-          );
+        if (cancelled) {
+          return;
+        }
 
-          console.log(
-            "[POWERBI] Prewarm concluído.",
+        queryClient.setQueryData(
+          TOKEN_KEY(config),
+          token,
+        );
+
+        console.info(
+          "[POWERBI] Prewarm concluído.",
+        );
+      } catch (error: any) {
+        /*
+         * É normal o Prewarm não conseguir token
+         * se o consentimento ainda não tiver sido
+         * realizado.
+         *
+         * Não tratamos isso como erro fatal.
+         */
+        if (
+          error?.message ===
+          "entra_login_required"
+        ) {
+          console.info(
+            "[POWERBI] Prewarm aguardando sessão Microsoft.",
+          );
+        } else if (
+          error?.message ===
+          "entra_powerbi_interaction_required"
+        ) {
+          console.info(
+            "[POWERBI] Prewarm aguardando consentimento do Power BI.",
+          );
+        } else {
+          console.warn(
+            "[POWERBI] Prewarm silencioso não disponível.",
+            error,
           );
         }
-      } catch (error) {
-        /*
-         * Isso NÃO deve ser tratado como erro
-         * fatal do Portal.
-         *
-         * Significa apenas que ainda não
-         * existe token Power BI silencioso.
-         */
-        console.info(
-          "[POWERBI] Prewarm silencioso não disponível.",
-        );
       }
     })();
 
