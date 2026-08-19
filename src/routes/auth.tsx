@@ -287,44 +287,203 @@ function AuthPage() {
   /* ------------------------------------------------------------------ */
 
   async function microsoft() {
-    if (msLoading || loading) {
+  if (msLoading || loading) {
+    return;
+  }
+
+  setMsLoading(true);
+
+  try {
+    console.log(
+      "[AUTH] ========================================",
+    );
+
+    console.log(
+      "[AUTH] Iniciando login Microsoft...",
+    );
+
+    /* -------------------------------------------------------------- */
+    /* CONFIGURAÇÃO                                                    */
+    /* -------------------------------------------------------------- */
+
+    const config =
+      await fetchEntraConfig();
+
+    if (!config) {
+      throw new Error(
+        "Microsoft Entra ID não está configurado no portal.",
+      );
+    }
+
+    console.log(
+      "[AUTH] Configuração Entra encontrada.",
+      {
+        clientId:
+          `${config.clientId.slice(0, 8)}...`,
+
+        tenantId:
+          `${config.tenantId.slice(0, 8)}...`,
+      },
+    );
+
+    /* -------------------------------------------------------------- */
+    /* LOGIN MICROSOFT                                                 */
+    /* -------------------------------------------------------------- */
+
+    const loginResult =
+      await loginWithEntra(config);
+
+    if (!loginResult.account) {
+      throw new Error(
+        "A Microsoft autenticou o usuário, mas não retornou a conta.",
+      );
+    }
+
+    console.log(
+      "[AUTH] Conta Microsoft autenticada:",
+      {
+        username:
+          loginResult.account.username,
+
+        name:
+          loginResult.account.name,
+      },
+    );
+
+    /*
+     * Quando loginWithEntra retornar idToken vazio,
+     * significa que já havia uma sessão MSAL válida.
+     *
+     * Nesse caso não precisamos criar novamente
+     * a sessão Supabase através do ID Token.
+     */
+    if (!loginResult.idToken) {
+      console.log(
+        "[AUTH] Sessão Microsoft já existente.",
+      );
+
+      /*
+       * Verificamos se o portal já possui sessão.
+       */
+      const {
+        data,
+      } =
+        await supabase.auth.getSession();
+
+      if (data.session) {
+        console.log(
+          "[AUTH] Sessão do portal já existente.",
+        );
+
+        await navigate({
+          to: "/inicio",
+          replace: true,
+        });
+
+        return;
+      }
+
+      /*
+       * Caso a conta Microsoft exista no MSAL,
+       * mas a sessão Supabase tenha sido perdida,
+       * fazemos um novo login Microsoft para obter
+       * o ID Token necessário ao portal.
+       */
+      console.log(
+        "[AUTH] Sessão Microsoft encontrada, mas sessão do portal ausente.",
+      );
+
+      throw new Error(
+        "Sessão Microsoft encontrada, mas a sessão do portal não está disponível. Recarregue a página e tente novamente.",
+      );
+    }
+
+    /* -------------------------------------------------------------- */
+    /* CRIAR SESSÃO DO PORTAL                                         */
+    /* -------------------------------------------------------------- */
+
+    await createPortalSession(
+      loginResult.idToken,
+    );
+  } catch (error: any) {
+    console.error(
+      "[AUTH] ========================================",
+    );
+
+    console.error(
+      "[AUTH] Erro no login Microsoft:",
+      error,
+    );
+
+    console.error(
+      "[AUTH] Código:",
+      error?.errorCode ??
+        error?.code ??
+        "sem código",
+    );
+
+    console.error(
+      "[AUTH] Mensagem:",
+      error?.message ??
+        "sem mensagem",
+    );
+
+    console.error(
+      "[AUTH] ========================================",
+    );
+
+    const errorCode =
+      error?.errorCode ??
+      error?.code ??
+      "";
+
+    const cancelledCodes = [
+      "user_cancelled",
+      "user_canceled",
+      "popup_window_error",
+    ];
+
+    if (
+      cancelledCodes.includes(
+        errorCode,
+      )
+    ) {
+      console.log(
+        "[AUTH] Login Microsoft cancelado pelo usuário.",
+      );
+
       return;
     }
 
-    setMsLoading(true);
-
-    try {
-      console.log(
-        "[AUTH] ========================================",
+    /*
+     * interaction_in_progress não deve mais acontecer
+     * normalmente, pois o loginWithEntra possui um
+     * lock interno.
+     *
+     * Mesmo assim, não exibimos uma mensagem técnica
+     * ao usuário.
+     */
+    if (
+      errorCode ===
+      "interaction_in_progress"
+    ) {
+      toast.error(
+        "A autenticação Microsoft ainda está sendo processada. Aguarde alguns segundos e tente novamente.",
       );
 
-      console.log(
-        "[AUTH] Iniciando login Microsoft...",
-      );
+      return;
+    }
 
-      /* -------------------------------------------------------------- */
-      /* CONFIGURAÇÃO                                                    */
-      /* -------------------------------------------------------------- */
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Falha no login com Microsoft.";
 
-      const config =
-        await fetchEntraConfig();
-
-      if (!config) {
-        throw new Error(
-          "Microsoft Entra ID não está configurado no portal.",
-        );
-      }
-
-      console.log(
-        "[AUTH] Configuração Entra encontrada.",
-        {
-          clientId:
-            `${config.clientId.slice(0, 8)}...`,
-
-          tenantId:
-            `${config.tenantId.slice(0, 8)}...`,
-        },
-      );
+    toast.error(message);
+  } finally {
+    setMsLoading(false);
+  }
+}
 
       /* -------------------------------------------------------------- */
       /* MSAL                                                            */
