@@ -170,3 +170,24 @@ export function usePowerBIPrewarm(loginHint?: string) {
     };
   }, [config, loginHint, qc]);
 }
+
+/**
+ * Login principal do portal com o App Registration do Entra ID (MSAL, popup).
+ *
+ * Usamos popup e não redirect/iframe: o login.microsoftonline.com recusa ser
+ * carregado dentro de iframes (X-Frame-Options → ERR_BLOCKED_BY_RESPONSE),
+ * que é exatamente o erro do fluxo OAuth intermediado pelo Lovable Cloud Auth.
+ *
+ * O mesmo login já concede o escopo delegado do Power BI, então o visualizador
+ * reaproveita a sessão MSAL sem pedir uma segunda autenticação.
+ */
+export async function loginWithEntra(config: EntraConfig) {
+  const msal = await getMsal(config);
+  const result = await msal.loginPopup({
+    scopes: ["openid", "profile", "email", "User.Read", ...POWERBI_SCOPES],
+    prompt: "select_account",
+  });
+  if (result.account) msal.setActiveAccount(result.account);
+  if (!result.idToken) throw new Error("Entra ID não retornou o token de identidade");
+  return { idToken: result.idToken, account: result.account };
+}
