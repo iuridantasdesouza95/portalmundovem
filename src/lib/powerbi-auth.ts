@@ -32,70 +32,54 @@ export type PowerBIToken = {
 export function useEntraConfig() {
   return useQuery({
     queryKey: ["entra-config"],
-
     staleTime: 5 * 60_000,
 
-    queryFn:
-      async (): Promise<EntraConfig | null> => {
-        const {
-          data,
+    queryFn: async (): Promise<EntraConfig | null> => {
+      const { data, error } = await supabase
+        .from("app_settings")
+        .select("key, value")
+        .in("key", [
+          "azure_client_id",
+          "azure_tenant_id",
+        ]);
+
+      if (error) {
+        console.error(
+          "[ENTRA] Erro ao carregar configuração:",
           error,
-        } =
-          await supabase
-            .from("app_settings")
-            .select("key, value")
-            .in("key", [
-              "azure_client_id",
-              "azure_tenant_id",
-            ]);
+        );
 
-        if (error) {
-          console.error(
-            "[ENTRA] Erro ao carregar configuração:",
-            error,
-          );
+        throw error;
+      }
 
-          throw error;
-        }
+      const map = Object.fromEntries(
+        (data ?? []).map((setting) => [
+          setting.key,
+          setting.value,
+        ]),
+      );
 
-        const map =
-          Object.fromEntries(
-            (data ?? []).map(
-              (setting) => [
-                setting.key,
-                setting.value,
-              ],
-            ),
-          );
+      const clientId = String(
+        map["azure_client_id"] ?? "",
+      ).trim();
 
-        const clientId =
-          String(
-            map["azure_client_id"] ??
-              "",
-          ).trim();
+      const tenantId = String(
+        map["azure_tenant_id"] ?? "",
+      ).trim();
 
-        const tenantId =
-          String(
-            map["azure_tenant_id"] ??
-              "",
-          ).trim();
+      if (!clientId || !tenantId) {
+        console.warn(
+          "[ENTRA] Client ID ou Tenant ID não configurado.",
+        );
 
-        if (
-          !clientId ||
-          !tenantId
-        ) {
-          console.warn(
-            "[ENTRA] Client ID ou Tenant ID não configurado.",
-          );
+        return null;
+      }
 
-          return null;
-        }
-
-        return {
-          clientId,
-          tenantId,
-        };
-      },
+      return {
+        clientId,
+        tenantId,
+      };
+    },
   });
 }
 
@@ -104,21 +88,15 @@ export function useEntraConfig() {
 /* -------------------------------------------------------------------------- */
 
 export async function fetchEntraConfig(): Promise<EntraConfig | null> {
-  console.log(
-    "[ENTRA] Buscando configuração...",
-  );
+  console.log("[ENTRA] Buscando configuração...");
 
-  const {
-    data,
-    error,
-  } =
-    await supabase
-      .from("app_settings")
-      .select("key, value")
-      .in("key", [
-        "azure_client_id",
-        "azure_tenant_id",
-      ]);
+  const { data, error } = await supabase
+    .from("app_settings")
+    .select("key, value")
+    .in("key", [
+      "azure_client_id",
+      "azure_tenant_id",
+    ]);
 
   if (error) {
     console.error(
@@ -129,43 +107,30 @@ export async function fetchEntraConfig(): Promise<EntraConfig | null> {
     throw error;
   }
 
-  const map =
-    Object.fromEntries(
-      (data ?? []).map(
-        (setting) => [
-          setting.key,
-          setting.value,
-        ],
-      ),
-    );
+  const map = Object.fromEntries(
+    (data ?? []).map((setting) => [
+      setting.key,
+      setting.value,
+    ]),
+  );
 
-  const clientId =
-    String(
-      map["azure_client_id"] ??
-        "",
-    ).trim();
+  const clientId = String(
+    map["azure_client_id"] ?? "",
+  ).trim();
 
-  const tenantId =
-    String(
-      map["azure_tenant_id"] ??
-        "",
-    ).trim();
+  const tenantId = String(
+    map["azure_tenant_id"] ?? "",
+  ).trim();
 
   console.log(
     "[ENTRA] Configuração encontrada:",
     {
-      hasClientId:
-        Boolean(clientId),
-
-      hasTenantId:
-        Boolean(tenantId),
+      hasClientId: Boolean(clientId),
+      hasTenantId: Boolean(tenantId),
     },
   );
 
-  if (
-    !clientId ||
-    !tenantId
-  ) {
+  if (!clientId || !tenantId) {
     return null;
   }
 
@@ -187,93 +152,122 @@ let msalPromise:
 
 let msalKey = "";
 
+/*
+ * Protege contra duas chamadas simultâneas de loginPopup().
+ *
+ * Esse é justamente um dos problemas que gera:
+ *
+ * interaction_in_progress
+ */
+let loginPromise:
+  | Promise<
+      import("@azure/msal-browser").AuthenticationResult
+    >
+  | null = null;
+
+/* -------------------------------------------------------------------------- */
+/* GET MSAL                                                                    */
+/* -------------------------------------------------------------------------- */
+
 export async function getMsal(
   config: EntraConfig,
 ) {
   const key =
     `${config.clientId}:${config.tenantId}`;
 
-  if (
-    !msalPromise ||
-    msalKey !== key
-  ) {
+  if (!msalPromise || msalKey !== key) {
     msalKey = key;
 
-    msalPromise =
-      (async () => {
-        const {
-          PublicClientApplication,
-        } =
-          await import(
-            "@azure/msal-browser"
-          );
+    msalPromise = (async () => {
+      const {
+        PublicClientApplication,
+      } = await import("@azure/msal-browser");
 
-        const instance =
-          new PublicClientApplication({
-            auth: {
-              clientId:
-                config.clientId,
+      const instance =
+        new PublicClientApplication({
+          auth: {
+            clientId: config.clientId,
 
-              authority:
-                `https://login.microsoftonline.com/${config.tenantId}`,
+            authority:
+              `https://login.microsoftonline.com/${config.tenantId}`,
 
-              redirectUri:
-                `${window.location.origin}/auth`,
+            redirectUri:
+              `${window.location.origin}/auth`,
 
-              postLogoutRedirectUri:
-                `${window.location.origin}/auth`,
-            },
+            postLogoutRedirectUri:
+              `${window.location.origin}/auth`,
+          },
 
-            cache: {
-              cacheLocation:
-                "localStorage",
+          cache: {
+            cacheLocation: "localStorage",
 
-              storeAuthStateInCookie:
-                false,
-            },
-          });
+            storeAuthStateInCookie: true,
+          },
 
-        await instance.initialize();
+          system: {
+            allowNativeBroker: false,
+          },
+        });
 
-        console.info(
-          "[ENTRA] MSAL inicializado.",
-        );
+      await instance.initialize();
 
-        const accounts =
-          instance.getAllAccounts();
+      /*
+       * Muito importante:
+       *
+       * processa qualquer resposta pendente do MSAL
+       * antes de tentar uma nova interação.
+       */
+      try {
+        const redirectResponse =
+          await instance.handleRedirectPromise();
 
-        console.info(
-          "[ENTRA] Contas MSAL disponíveis:",
-          accounts.map(
-            (account) =>
-              account.username,
-          ),
-        );
-
-        /*
-         * Não iniciamos login aqui.
-         *
-         * Apenas registramos uma conta existente
-         * como ativa para que o Power BI possa
-         * posteriormente tentar acquireTokenSilent().
-         */
-
-        if (
-          accounts.length > 0 &&
-          !instance.getActiveAccount()
-        ) {
+        if (redirectResponse?.account) {
           instance.setActiveAccount(
-            accounts[0],
+            redirectResponse.account,
           );
 
           console.info(
-            "[ENTRA] Conta MSAL definida como ativa:",
-            accounts[0].username,
+            "[ENTRA] Conta recuperada do redirect:",
+            redirectResponse.account.username,
           );
         }
+      } catch (error) {
+        console.warn(
+          "[ENTRA] Não foi possível processar redirect pendente:",
+          error,
+        );
+      }
 
-        return instance;
-      })();
+      const accounts =
+        instance.getAllAccounts();
+
+      console.info(
+        "[ENTRA] Contas MSAL disponíveis:",
+        accounts.map(
+          (account) => account.username,
+        ),
+      );
+
+      if (
+        accounts.length > 0 &&
+        !instance.getActiveAccount()
+      ) {
+        instance.setActiveAccount(
+          accounts[0],
+        );
+
+        console.info(
+          "[ENTRA] Conta MSAL definida como ativa:",
+          accounts[0].username,
+        );
+      }
+
+      console.info(
+        "[ENTRA] MSAL inicializado.",
+      );
+
+      return instance;
+    })();
   }
 
   return msalPromise;
@@ -286,67 +280,117 @@ export async function getMsal(
 export async function loginWithEntra(
   config: EntraConfig,
 ) {
-  const msal =
-    await getMsal(config);
-
-  console.log(
-    "[ENTRA] Abrindo loginPopup...",
-  );
-
-  const response =
-    await msal.loginPopup({
-      scopes: [
-        "openid",
-        "profile",
-        "email",
-        "User.Read",
-      ],
-
-      prompt:
-        "select_account",
-
-      redirectUri:
-        `${window.location.origin}/auth`,
-    });
-
-  if (!response) {
-    throw new Error(
-      "A Microsoft não retornou uma resposta de autenticação.",
+  /*
+   * Se já existe um login em andamento,
+   * reutilizamos a mesma Promise.
+   *
+   * Isso elimina o interaction_in_progress causado
+   * por chamadas duplicadas.
+   */
+  if (loginPromise) {
+    console.info(
+      "[ENTRA] Login Microsoft já está em andamento. Aguardando...",
     );
+
+    return loginPromise;
   }
 
-  if (!response.account) {
-    throw new Error(
-      "A Microsoft autenticou o usuário, mas nenhuma conta foi retornada.",
+  loginPromise = (async () => {
+    const msal =
+      await getMsal(config);
+
+    const activeAccount =
+      msal.getActiveAccount();
+
+    /*
+     * Se já existe uma conta Microsoft válida,
+     * não abrimos outro popup.
+     */
+    if (activeAccount) {
+      console.info(
+        "[ENTRA] Sessão Microsoft já existente:",
+        activeAccount.username,
+      );
+
+      return {
+        idToken: "",
+        account: activeAccount,
+      };
+    }
+
+    console.log(
+      "[ENTRA] Abrindo loginPopup...",
     );
-  }
 
-  if (!response.idToken) {
-    throw new Error(
-      "O Microsoft Entra ID não retornou o token de identidade.",
-    );
-  }
+    const response =
+      await msal.loginPopup({
+        /*
+         * O Power BI já é solicitado durante o
+         * login Microsoft.
+         *
+         * Assim o token fica disponível no cache
+         * para o dashboard.
+         */
+        scopes: [
+          "openid",
+          "profile",
+          "email",
+          "User.Read",
+          ...POWERBI_SCOPES,
+        ],
 
-  msal.setActiveAccount(
-    response.account,
-  );
+        prompt: "select_account",
 
-  console.info(
-    "[ENTRA] Login Microsoft concluído:",
-    response.account.username,
-  );
+        redirectUri:
+          `${window.location.origin}/auth`,
+      });
 
-  return {
-    idToken:
-      response.idToken,
+    if (!response) {
+      throw new Error(
+        "A Microsoft não retornou uma resposta de autenticação.",
+      );
+    }
 
-    account:
+    if (!response.account) {
+      throw new Error(
+        "A Microsoft autenticou o usuário, mas nenhuma conta foi retornada.",
+      );
+    }
+
+    if (!response.idToken) {
+      throw new Error(
+        "O Microsoft Entra ID não retornou o token de identidade.",
+      );
+    }
+
+    msal.setActiveAccount(
       response.account,
-  };
+    );
+
+    console.info(
+      "[ENTRA] Login Microsoft concluído:",
+      response.account.username,
+    );
+
+    return {
+      idToken: response.idToken,
+      account: response.account,
+    };
+  })();
+
+  try {
+    return await loginPromise;
+  } finally {
+    /*
+     * Libera o lock somente depois que
+     * toda a interação terminou.
+     */
+    loginPromise = null;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
-/* TOKEN POWER BI                                                             */
+/* TOKEN                                                                       */
 /* -------------------------------------------------------------------------- */
 
 function wrapPowerBIToken(
@@ -362,13 +406,12 @@ function wrapPowerBIToken(
     expiresOn:
       result.expiresOn
         ? result.expiresOn.getTime()
-        : Date.now() +
-          55 * 60_000,
+        : Date.now() + 55 * 60_000,
   };
 }
 
 /* -------------------------------------------------------------------------- */
-/* OBTÉM TOKEN POWER BI                                                       */
+/* TOKEN POWER BI                                                             */
 /* -------------------------------------------------------------------------- */
 
 export async function getPowerBIToken(
@@ -407,6 +450,10 @@ export async function getPowerBIToken(
     }
   }
 
+  /*
+   * Sem conta Microsoft não existe token
+   * delegado do Power BI.
+   */
   if (!account) {
     console.warn(
       "[POWERBI] Nenhuma sessão Microsoft disponível.",
@@ -512,7 +559,7 @@ const TOKEN_KEY = (
 ];
 
 /* -------------------------------------------------------------------------- */
-/* HOOK TOKEN POWER BI                                                        */
+/* HOOK TOKEN                                                                 */
 /* -------------------------------------------------------------------------- */
 
 export function usePowerBIToken(
@@ -521,8 +568,7 @@ export function usePowerBIToken(
 ) {
   const {
     data: config,
-  } =
-    useEntraConfig();
+  } = useEntraConfig();
 
   return useQuery({
     queryKey:
@@ -546,24 +592,21 @@ export function usePowerBIToken(
     refetchOnWindowFocus:
       true,
 
-    queryFn:
-      async () => {
-        if (!config) {
-          throw new Error(
-            "Entra ID não configurado.",
-          );
-        }
-
-        return getPowerBIToken(
-          config,
-          {
-            loginHint,
-
-            interactive:
-              false,
-          },
+    queryFn: async () => {
+      if (!config) {
+        throw new Error(
+          "Entra ID não configurado.",
         );
-      },
+      }
+
+      return getPowerBIToken(
+        config,
+        {
+          loginHint,
+          interactive: false,
+        },
+      );
+    },
   });
 }
 
@@ -576,8 +619,7 @@ export function usePowerBIPrewarm(
 ) {
   const {
     data: config,
-  } =
-    useEntraConfig();
+  } = useEntraConfig();
 
   const queryClient =
     useQueryClient();
@@ -600,9 +642,7 @@ export function usePowerBIPrewarm(
             config,
             {
               loginHint,
-
-              interactive:
-                false,
+              interactive: false,
             },
           );
 
