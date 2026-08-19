@@ -87,6 +87,8 @@ export function useEntraConfig() {
 /* -------------------------------------------------------------------------- */
 
 export async function fetchEntraConfig(): Promise<EntraConfig | null> {
+  console.log("[ENTRA] Buscando configuração...");
+
   const { data, error } = await supabase
     .from("app_settings")
     .select("key, value")
@@ -94,6 +96,11 @@ export async function fetchEntraConfig(): Promise<EntraConfig | null> {
       "azure_client_id",
       "azure_tenant_id",
     ]);
+
+  console.log("[ENTRA] Resultado da consulta:", {
+    data,
+    error,
+  });
 
   if (error) {
     console.error(
@@ -119,7 +126,16 @@ export async function fetchEntraConfig(): Promise<EntraConfig | null> {
     map["azure_tenant_id"] ?? "",
   ).trim();
 
+  console.log("[ENTRA] Configuração encontrada:", {
+    hasClientId: Boolean(clientId),
+    hasTenantId: Boolean(tenantId),
+  });
+
   if (!clientId || !tenantId) {
+    console.error(
+      "[ENTRA] Client ID ou Tenant ID não foi encontrado.",
+    );
+
     return null;
   }
 
@@ -128,7 +144,6 @@ export async function fetchEntraConfig(): Promise<EntraConfig | null> {
     tenantId,
   };
 }
-
 /* -------------------------------------------------------------------------- */
 /* MSAL                                                                       */
 /* -------------------------------------------------------------------------- */
