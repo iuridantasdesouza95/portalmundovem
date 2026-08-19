@@ -79,171 +79,7 @@ function AuthPage() {
     useState(false);
 
   /* ---------------------------------------------------------------------- */
-  /* TRANSFORMAR MICROSOFT EM SESSÃO DO PORTAL                             */
-  /* ---------------------------------------------------------------------- */
-
-  async function createPortalSessionFromMicrosoft() {
-    console.log(
-      "[AUTH] Criando sessão do portal a partir da identidade Microsoft...",
-    );
-
-    const config =
-      await fetchEntraConfig();
-
-    if (!config) {
-      throw new Error(
-        "Microsoft Entra ID não está configurado no portal.",
-      );
-    }
-
-    const msal =
-      await getMsal(config);
-
-    const account =
-      msal.getActiveAccount() ??
-      msal.getAllAccounts()[0] ??
-      null;
-
-    if (!account) {
-      throw new Error(
-        "Nenhuma conta Microsoft foi encontrada após o login.",
-      );
-    }
-
-    msal.setActiveAccount(account);
-
-    console.log(
-      "[AUTH] Conta Microsoft autenticada:",
-      {
-        username:
-          account.username,
-
-        name:
-          account.name,
-      },
-    );
-
-    /* ------------------------------------------------------------------ */
-    /* OBTER ID TOKEN                                                     */
-    /* ------------------------------------------------------------------ */
-
-    console.log(
-      "[AUTH] Obtendo ID Token Microsoft...",
-    );
-
-    const tokenResult =
-      await msal.acquireTokenSilent({
-        scopes: [
-          "openid",
-          "profile",
-          "email",
-          "User.Read",
-        ],
-
-        account,
-      });
-
-    if (!tokenResult.idToken) {
-      throw new Error(
-        "O Microsoft Entra ID não retornou o token de identidade.",
-      );
-    }
-
-    console.log(
-      "[AUTH] ID Token Microsoft obtido.",
-    );
-
-    /* ------------------------------------------------------------------ */
-    /* VALIDAR MICROSOFT NO BACKEND                                       */
-    /* ------------------------------------------------------------------ */
-
-    console.log(
-      "[AUTH] Validando identidade Microsoft no servidor...",
-    );
-
-    const {
-      email: portalEmail,
-      tokenHash,
-    } =
-      await entraSignInFn({
-        data: {
-          idToken:
-            tokenResult.idToken,
-        },
-      });
-
-    if (!portalEmail) {
-      throw new Error(
-        "O servidor não retornou o e-mail da conta Microsoft.",
-      );
-    }
-
-    if (!tokenHash) {
-      throw new Error(
-        "O servidor não retornou o token necessário para criar a sessão.",
-      );
-    }
-
-    console.log(
-      "[AUTH] Identidade Microsoft validada:",
-      portalEmail,
-    );
-
-    /* ------------------------------------------------------------------ */
-    /* CRIAR SESSÃO SUPABASE                                              */
-    /* ------------------------------------------------------------------ */
-
-    console.log(
-      "[AUTH] Criando sessão Supabase...",
-    );
-
-    const {
-      error: verifyError,
-    } =
-      await supabase.auth.verifyOtp({
-        email:
-          portalEmail,
-
-        token_hash:
-          tokenHash,
-
-        type:
-          "email",
-      });
-
-    if (verifyError) {
-      throw verifyError;
-    }
-
-    /* ------------------------------------------------------------------ */
-    /* CONFIRMAR SESSÃO                                                   */
-    /* ------------------------------------------------------------------ */
-
-    const {
-      data: sessionData,
-      error: sessionError,
-    } =
-      await supabase.auth.getSession();
-
-    if (sessionError) {
-      throw sessionError;
-    }
-
-    if (!sessionData.session) {
-      throw new Error(
-        "O login Microsoft foi concluído, mas a sessão do portal não foi criada.",
-      );
-    }
-
-    console.log(
-      "[AUTH] Sessão Supabase criada com sucesso.",
-    );
-
-    return sessionData.session;
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* INICIALIZAÇÃO DA AUTENTICAÇÃO                                         */
+  /* INICIALIZAÇÃO DA AUTENTICAÇÃO                                          */
   /* ---------------------------------------------------------------------- */
 
   useEffect(() => {
@@ -260,7 +96,7 @@ function AuthPage() {
         );
 
         /* ---------------------------------------------------------------- */
-        /* 1. VERIFICAR SESSÃO SUPABASE                                     */
+        /* 1. VERIFICAR SESSÃO SUPABASE                                      */
         /* ---------------------------------------------------------------- */
 
         const {
@@ -282,7 +118,7 @@ function AuthPage() {
           );
 
           if (mounted) {
-            navigate({
+            await navigate({
               to: "/inicio",
               replace: true,
             });
@@ -296,7 +132,7 @@ function AuthPage() {
         );
 
         /* ---------------------------------------------------------------- */
-        /* 2. VERIFICAR MICROSOFT                                           */
+        /* 2. CONFIGURAÇÃO ENTRA                                             */
         /* ---------------------------------------------------------------- */
 
         console.log(
@@ -307,7 +143,7 @@ function AuthPage() {
           await fetchEntraConfig();
 
         if (!config) {
-          console.log(
+          console.warn(
             "[AUTH] Microsoft Entra ID não configurado.",
           );
 
@@ -326,7 +162,7 @@ function AuthPage() {
         );
 
         /* ---------------------------------------------------------------- */
-        /* 3. INICIALIZAR MSAL                                              */
+        /* 3. INICIALIZAR MSAL                                               */
         /* ---------------------------------------------------------------- */
 
         const msal =
@@ -351,9 +187,10 @@ function AuthPage() {
         /*
          * IMPORTANTE:
          *
-         * Se não houver conta, simplesmente aguardamos.
+         * Se não existe conta MSAL, não fazemos nada aqui.
          *
-         * O login será iniciado pelo botão.
+         * O login será iniciado exclusivamente
+         * pelo botão "Entrar com Microsoft".
          */
         if (!account) {
           console.log(
@@ -363,37 +200,168 @@ function AuthPage() {
           return;
         }
 
+        console.log(
+          "[AUTH] Conta Microsoft encontrada:",
+          {
+            username:
+              account.username,
+
+            name:
+              account.name,
+          },
+        );
+
         msal.setActiveAccount(
           account,
         );
 
+        /* ---------------------------------------------------------------- */
+        /* 4. TENTAR TOKEN MICROSOFT                                        */
+        /* ---------------------------------------------------------------- */
+
         console.log(
-          "[AUTH] Conta Microsoft encontrada.",
-          account.username,
+          "[AUTH] Obtendo token Microsoft silenciosamente...",
+        );
+
+        let tokenResult;
+
+        try {
+          tokenResult =
+            await msal.acquireTokenSilent({
+              scopes: [
+                "openid",
+                "profile",
+                "email",
+                "User.Read",
+              ],
+
+              account,
+            });
+        } catch (error) {
+          console.warn(
+            "[AUTH] Não foi possível obter token silenciosamente.",
+            error,
+          );
+
+          /*
+           * Não abrimos popup automaticamente aqui.
+           *
+           * O usuário poderá clicar novamente
+           * em "Entrar com Microsoft".
+           */
+          return;
+        }
+
+        if (!tokenResult.idToken) {
+          console.warn(
+            "[AUTH] Token Microsoft não possui idToken.",
+          );
+
+          return;
+        }
+
+        console.log(
+          "[AUTH] Token Microsoft obtido.",
         );
 
         /* ---------------------------------------------------------------- */
-        /* 4. CRIAR SESSÃO PORTAL                                          */
+        /* 5. CONVERTER MICROSOFT EM SESSÃO DO PORTAL                       */
         /* ---------------------------------------------------------------- */
 
-        await createPortalSessionFromMicrosoft();
+        console.log(
+          "[AUTH] Criando sessão do portal...",
+        );
 
-        if (!mounted) {
-          return;
+        const {
+          email: portalEmail,
+          tokenHash,
+        } =
+          await entraSignInFn({
+            data: {
+              idToken:
+                tokenResult.idToken,
+            },
+          });
+
+        if (!portalEmail) {
+          throw new Error(
+            "O servidor não retornou o e-mail da conta Microsoft.",
+          );
         }
+
+        if (!tokenHash) {
+          throw new Error(
+            "O servidor não retornou o token necessário para criar a sessão.",
+          );
+        }
+
+        console.log(
+          "[AUTH] Identidade Microsoft validada:",
+          portalEmail,
+        );
+
+        /* ---------------------------------------------------------------- */
+        /* 6. CRIAR SESSÃO SUPABASE                                         */
+        /* ---------------------------------------------------------------- */
+
+        const {
+          error: verifyError,
+        } =
+          await supabase.auth.verifyOtp({
+            email:
+              portalEmail,
+
+            token_hash:
+              tokenHash,
+
+            type:
+              "email",
+          });
+
+        if (verifyError) {
+          throw verifyError;
+        }
+
+        console.log(
+          "[AUTH] Sessão Supabase criada.",
+        );
+
+        /* ---------------------------------------------------------------- */
+        /* 7. CONFIRMAR SESSÃO                                              */
+        /* ---------------------------------------------------------------- */
+
+        const {
+          data:
+            confirmedSession,
+        } =
+          await supabase.auth.getSession();
+
+        if (
+          !confirmedSession.session
+        ) {
+          throw new Error(
+            "O login Microsoft foi concluído, mas a sessão do portal não foi criada.",
+          );
+        }
+
+        console.log(
+          "[AUTH] Sessão do portal confirmada.",
+        );
 
         console.log(
           "[AUTH] Redirecionando para /inicio...",
         );
 
-        navigate({
-          to: "/inicio",
-          replace: true,
-        });
-
         console.log(
           "[AUTH] ========================================",
         );
+
+        if (mounted) {
+          await navigate({
+            to: "/inicio",
+            replace: true,
+          });
+        }
       } catch (error) {
         console.error(
           "[AUTH] Erro ao inicializar autenticação:",
@@ -401,22 +369,11 @@ function AuthPage() {
         );
 
         if (mounted) {
-          const message =
+          toast.error(
             error instanceof Error
               ? error.message
-              : "Não foi possível autenticar com a Microsoft.";
-
-          /*
-           * Não exibir erro durante estados transitórios
-           * do MSAL.
-           */
-          if (
-            !/interaction_in_progress|redirect_in_iframe/i.test(
-              message,
-            )
-          ) {
-            toast.error(message);
-          }
+              : "Não foi possível autenticar com a Microsoft.",
+          );
         }
       }
     }
@@ -469,7 +426,7 @@ function AuthPage() {
           "[AUTH] Login por e-mail concluído.",
         );
 
-        navigate({
+        await navigate({
           to: "/inicio",
           replace: true,
         });
@@ -513,7 +470,7 @@ function AuthPage() {
           "[AUTH] Conta criada e sessão iniciada.",
         );
 
-        navigate({
+        await navigate({
           to: "/inicio",
           replace: true,
         });
@@ -539,7 +496,7 @@ function AuthPage() {
   }
 
   /* ---------------------------------------------------------------------- */
-  /* LOGIN MICROSOFT                                                       */
+  /* LOGIN MICROSOFT                                                        */
   /* ---------------------------------------------------------------------- */
 
   async function microsoft() {
@@ -600,7 +557,7 @@ function AuthPage() {
       }
 
       /* ---------------------------------------------------------------- */
-      /* 2. MSAL                                                           */
+      /* 2. MSAL                                                          */
       /* ---------------------------------------------------------------- */
 
       const msal =
@@ -611,7 +568,7 @@ function AuthPage() {
       );
 
       /* ---------------------------------------------------------------- */
-      /* 3. VERIFICAR CONTA EXISTENTE                                      */
+      /* 3. VERIFICAR CONTA EXISTENTE                                     */
       /* ---------------------------------------------------------------- */
 
       let account =
@@ -619,10 +576,6 @@ function AuthPage() {
         msal.getAllAccounts()[0] ??
         null;
 
-      /*
-       * Se já existir uma conta Microsoft,
-       * tentamos primeiro reutilizar a sessão.
-       */
       if (account) {
         console.log(
           "[AUTH] Conta Microsoft já disponível:",
@@ -633,22 +586,34 @@ function AuthPage() {
           account,
         );
 
+        /*
+         * Tenta reutilizar a sessão existente.
+         */
         try {
-          await createPortalSessionFromMicrosoft();
+          const tokenResult =
+            await msal.acquireTokenSilent({
+              scopes: [
+                "openid",
+                "profile",
+                "email",
+                "User.Read",
+              ],
 
-          console.log(
-            "[AUTH] Sessão do portal criada usando conta existente.",
-          );
+              account,
+            });
 
-          navigate({
-            to: "/inicio",
-            replace: true,
-          });
+          if (
+            tokenResult.idToken
+          ) {
+            await createPortalSession(
+              tokenResult.idToken,
+            );
 
-          return;
+            return;
+          }
         } catch (error) {
           console.warn(
-            "[AUTH] Não foi possível reutilizar a conta existente. Será solicitado novo login.",
+            "[AUTH] Sessão Microsoft existente não pôde ser reutilizada.",
             error,
           );
         }
@@ -666,7 +631,7 @@ function AuthPage() {
         "[AUTH] Abrindo loginPopup do Microsoft Entra ID...",
       );
 
-      const result =
+      const loginResult =
         await msal.loginPopup({
           scopes: [
             "openid",
@@ -680,48 +645,49 @@ function AuthPage() {
         });
 
       console.log(
-        "[AUTH] loginPopup concluído.",
+        "[AUTH] Login Microsoft concluído.",
       );
 
-      if (!result.account) {
+      if (
+        !loginResult.account
+      ) {
         throw new Error(
-          "A Microsoft não retornou uma conta após o login.",
+          "A Microsoft autenticou o usuário, mas não retornou a conta.",
         );
       }
 
       account =
-        result.account;
+        loginResult.account;
 
       msal.setActiveAccount(
         account,
       );
 
       console.log(
-        "[AUTH] Conta Microsoft autenticada:",
+        "[AUTH] Conta Microsoft definida como ativa:",
         account.username,
       );
 
       /* ---------------------------------------------------------------- */
-      /* 5. CRIAR SESSÃO DO PORTAL                                        */
+      /* 5. USAR ID TOKEN DO LOGIN                                        */
       /* ---------------------------------------------------------------- */
 
-      await createPortalSessionFromMicrosoft();
+      if (!loginResult.idToken) {
+        throw new Error(
+          "A Microsoft não retornou o token de identidade.",
+        );
+      }
 
       console.log(
-        "[AUTH] Login Microsoft concluído com sucesso.",
+        "[AUTH] ID Token Microsoft recebido.",
       );
 
-      console.log(
-        "[AUTH] Redirecionando para /inicio...",
-      );
+      /* ---------------------------------------------------------------- */
+      /* 6. CRIAR SESSÃO PORTAL                                           */
+      /* ---------------------------------------------------------------- */
 
-      navigate({
-        to: "/inicio",
-        replace: true,
-      });
-
-      console.log(
-        "[AUTH] ========================================",
+      await createPortalSession(
+        loginResult.idToken,
       );
     } catch (error: any) {
       console.error(
@@ -734,8 +700,10 @@ function AuthPage() {
       );
 
       console.error(
-        "[AUTH] Código MSAL:",
-        error?.errorCode,
+        "[AUTH] Código:",
+        error?.errorCode ??
+          error?.code ??
+          "sem código",
       );
 
       console.error(
@@ -747,47 +715,134 @@ function AuthPage() {
         error?.code ??
         "";
 
-      /*
-       * Usuário fechou o popup.
-       */
-      if (
-        errorCode ===
-          "user_cancelled" ||
-        errorCode ===
-          "popup_window_error"
-      ) {
-        toast.info(
-          "Login Microsoft cancelado.",
-        );
-
-        return;
-      }
-
-      /*
-       * Outro popup/login já está em andamento.
-       */
-      if (
-        errorCode ===
-          "interaction_in_progress"
-      ) {
-        toast.info(
-          "Já existe uma autenticação Microsoft em andamento.",
-        );
-
-        return;
-      }
-
       const message =
         error instanceof Error
           ? error.message
           : "Falha no login com Microsoft.";
 
-      toast.error(
-        message,
-      );
+      /*
+       * Erros de cancelamento não precisam
+       * gerar alerta agressivo.
+       */
+      if (
+        errorCode !==
+          "user_cancelled" &&
+        errorCode !==
+          "user_canceled" &&
+        errorCode !==
+          "popup_window_error"
+      ) {
+        toast.error(
+          message,
+        );
+      }
     } finally {
       setMsLoading(false);
     }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* CRIAR SESSÃO DO PORTAL                                                */
+  /* ---------------------------------------------------------------------- */
+
+  async function createPortalSession(
+    idToken: string,
+  ) {
+    console.log(
+      "[AUTH] Criando sessão do portal a partir do Microsoft Entra...",
+    );
+
+    const {
+      email: portalEmail,
+      tokenHash,
+    } =
+      await entraSignInFn({
+        data: {
+          idToken,
+        },
+      });
+
+    if (!portalEmail) {
+      throw new Error(
+        "O servidor não retornou o e-mail da conta Microsoft.",
+      );
+    }
+
+    if (!tokenHash) {
+      throw new Error(
+        "O servidor não retornou o token necessário para criar a sessão.",
+      );
+    }
+
+    console.log(
+      "[AUTH] Identidade Microsoft validada:",
+      portalEmail,
+    );
+
+    /* ------------------------------------------------------------------ */
+    /* CRIAR SESSÃO SUPABASE                                              */
+    /* ------------------------------------------------------------------ */
+
+    const {
+      error: verifyError,
+    } =
+      await supabase.auth.verifyOtp({
+        email:
+          portalEmail,
+
+        token_hash:
+          tokenHash,
+
+        type:
+          "email",
+      });
+
+    if (verifyError) {
+      throw verifyError;
+    }
+
+    console.log(
+      "[AUTH] Sessão Supabase criada.",
+    );
+
+    /* ------------------------------------------------------------------ */
+    /* CONFIRMAR                                                          */
+    /* ------------------------------------------------------------------ */
+
+    const {
+      data:
+        sessionData,
+    } =
+      await supabase.auth.getSession();
+
+    if (
+      !sessionData.session
+    ) {
+      throw new Error(
+        "O login Microsoft foi concluído, mas a sessão do portal não foi criada.",
+      );
+    }
+
+    console.log(
+      "[AUTH] Sessão Supabase confirmada.",
+    );
+
+    console.log(
+      "[AUTH] Login Microsoft concluído com sucesso.",
+    );
+
+    console.log(
+      "[AUTH] Redirecionando para /inicio...",
+    );
+
+    console.log(
+      "[AUTH] ========================================",
+    );
+
+    await navigate({
+      to: "/inicio",
+      replace: true,
+    });
   }
 
   /* ---------------------------------------------------------------------- */
@@ -825,7 +880,7 @@ function AuthPage() {
         return;
       }
 
-      navigate({
+      await navigate({
         to: "/inicio",
         replace: true,
       });
@@ -891,11 +946,9 @@ function AuthPage() {
         <div className="w-full max-w-sm">
 
           <h1 className="font-display text-2xl font-semibold">
-
             {mode === "login"
               ? "Acessar o portal"
               : "Criar acesso"}
-
           </h1>
 
           <p className="mt-1.5 text-sm text-muted-foreground">
@@ -978,6 +1031,8 @@ function AuthPage() {
                 className="mt-6 space-y-4"
               >
 
+                {/* NOME */}
+
                 {mode === "signup" && (
                   <div className="space-y-1.5">
 
@@ -999,6 +1054,8 @@ function AuthPage() {
                   </div>
                 )}
 
+                {/* E-MAIL */}
+
                 <div className="space-y-1.5">
 
                   <Label htmlFor="email">
@@ -1018,6 +1075,8 @@ function AuthPage() {
                   />
 
                 </div>
+
+                {/* SENHA */}
 
                 <div className="space-y-1.5">
 
@@ -1040,6 +1099,8 @@ function AuthPage() {
 
                 </div>
 
+                {/* BOTÃO */}
+
                 <Button
                   type="submit"
                   variant="secondary"
@@ -1057,6 +1118,8 @@ function AuthPage() {
                 </Button>
 
               </form>
+
+              {/* ALTERNAR */}
 
               <button
                 type="button"
