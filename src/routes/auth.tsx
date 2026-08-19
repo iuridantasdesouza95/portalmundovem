@@ -131,43 +131,16 @@ function AuthPage() {
             {mode === "login" ? "Acessar o portal" : "Criar acesso"}
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            {mode === "login"
-              ? "Use suas credenciais corporativas."
-              : "Seu acesso inicia com perfil Analista."}
+            Entre com sua conta corporativa Microsoft — a mesma sessão é usada nos dashboards do
+            Power BI.
           </p>
 
-          <form onSubmit={submit} className="mt-8 space-y-4">
-            {mode === "signup" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="name">Nome completo</Label>
-                <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label htmlFor="email">E-mail corporativo</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Aguarde…" : mode === "login" ? "Entrar" : "Criar acesso"}
-            </Button>
-          </form>
+          <Button className="mt-8 w-full" onClick={microsoft} disabled={msLoading}>
+            {msLoading ? "Conectando…" : "Entrar com Microsoft"}
+          </Button>
+          <p className="mt-3 text-center text-[11px] text-muted-foreground">
+            Login único: portal e Power BI com a sua identidade Microsoft Entra ID.
+          </p>
 
           <div className="my-6 flex items-center gap-3 text-[11px] uppercase tracking-wider text-muted-foreground">
             <span className="h-px flex-1 bg-border" /> ou <span className="h-px flex-1 bg-border" />
@@ -176,17 +149,64 @@ function AuthPage() {
           <Button variant="outline" className="w-full" onClick={google}>
             Continuar com Google
           </Button>
-          <p className="mt-3 text-center text-[11px] text-muted-foreground">
-            Preparado para integração com Microsoft Entra ID.
-          </p>
 
-          <button
-            type="button"
-            onClick={() => setMode(mode === "login" ? "signup" : "login")}
-            className="mt-8 w-full text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            {mode === "login" ? "Não tem acesso? Criar conta" : "Já tenho acesso"}
-          </button>
+          {!showEmail ? (
+            <button
+              type="button"
+              onClick={() => setShowEmail(true)}
+              className="mt-6 w-full text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
+            >
+              Entrar com e-mail e senha
+            </button>
+          ) : (
+            <>
+              <form onSubmit={submit} className="mt-6 space-y-4">
+                {mode === "signup" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="name">Nome completo</Label>
+                    <Input
+                      id="name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="email">E-mail corporativo</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="password">Senha</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <Button type="submit" variant="secondary" className="w-full" disabled={loading}>
+                  {loading ? "Aguarde…" : mode === "login" ? "Entrar" : "Criar acesso"}
+                </Button>
+              </form>
+
+              <button
+                type="button"
+                onClick={() => setMode(mode === "login" ? "signup" : "login")}
+                className="mt-6 w-full text-center text-sm text-muted-foreground underline-offset-4 hover:underline"
+              >
+                {mode === "login" ? "Não tem acesso? Criar conta" : "Já tenho acesso"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
