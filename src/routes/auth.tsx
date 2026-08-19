@@ -74,6 +74,24 @@ function AuthPage() {
     }
   }
 
+  async function microsoft() {
+    setMsLoading(true);
+    try {
+      const result = await lovable.auth.signInWithOAuth("microsoft", {
+        redirect_uri: window.location.origin,
+        extraParams: { prompt: "select_account" },
+      });
+      if (result.error) {
+        toast.error("Falha no login com Microsoft");
+        return;
+      }
+      if (result.redirected) return;
+      navigate({ to: "/inicio", replace: true });
+    } finally {
+      setMsLoading(false);
+    }
+  }
+
   async function google() {
     const result = await lovable.auth.signInWithOAuth("google", {
       redirect_uri: window.location.origin,
