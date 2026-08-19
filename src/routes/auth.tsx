@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchEntraConfig, loginWithEntra } from "@/lib/powerbi-auth";
+import { entraSignIn as entraSignInFn } from "@/lib/entra-session.functions";
 import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,19 +79,43 @@ function AuthPage() {
   async function microsoft() {
     setMsLoading(true);
     try {
-      const result = await lovable.auth.signInWithOAuth("microsoft", {
-        redirect_uri: window.location.origin,
-        extraParams: { prompt: "select_account" },
-      });
-      if (result.error) {
-        toast.error("Falha no login com Microsoft");
+      const config = await fetchEntraConfig();
+      if (!config) {
+        await microsoftLegacy();
         return;
       }
-      if (result.redirected) return;
+      // Fluxo direto no App Registration do portal (popup — sem iframe, sem broker).
+      const { idToken } = await loginWithEntra(config);
+      const { email, tokenHash } = await entraSignInFn({ data: { idToken } });
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token_hash: tokenHash,
+        type: "email",
+      });
+      if (error) throw error;
       navigate({ to: "/inicio", replace: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Falha no login com Microsoft";
+      if (!/user_cancelled|popup_window_error|window_closed/i.test(message)) {
+        toast.error(message);
+      }
     } finally {
       setMsLoading(false);
     }
+  }
+
+  // Fluxo anterior (Lovable Cloud Auth) mantido como alternativa.
+  async function microsoftLegacy() {
+    const result = await lovable.auth.signInWithOAuth("microsoft", {
+      redirect_uri: window.location.origin,
+      extraParams: { prompt: "select_account" },
+    });
+    if (result.error) {
+      toast.error("Falha no login com Microsoft");
+      return;
+    }
+    if (result.redirected) return;
+    navigate({ to: "/inicio", replace: true });
   }
 
   async function google() {

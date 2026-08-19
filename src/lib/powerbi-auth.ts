@@ -38,7 +38,19 @@ export function useEntraConfig() {
 let msalPromise: Promise<import("@azure/msal-browser").PublicClientApplication> | null = null;
 let msalKey = "";
 
-async function getMsal(config: EntraConfig) {
+export async function fetchEntraConfig(): Promise<EntraConfig | null> {
+  const { data } = await supabase
+    .from("app_settings")
+    .select("key, value")
+    .in("key", ["azure_client_id", "azure_tenant_id"]);
+  const map = Object.fromEntries((data ?? []).map((s) => [s.key, s.value]));
+  const clientId = (map["azure_client_id"] ?? "").trim();
+  const tenantId = (map["azure_tenant_id"] ?? "").trim();
+  if (!clientId || !tenantId) return null;
+  return { clientId, tenantId };
+}
+
+export async function getMsal(config: EntraConfig) {
   const key = `${config.clientId}:${config.tenantId}`;
   if (!msalPromise || msalKey !== key) {
     msalKey = key;
@@ -157,4 +169,25 @@ export function usePowerBIPrewarm(loginHint?: string) {
       cancelled = true;
     };
   }, [config, loginHint, qc]);
+}
+
+/**
+ * Login principal do portal com o App Registration do Entra ID (MSAL, popup).
+ *
+ * Usamos popup e não redirect/iframe: o login.microsoftonline.com recusa ser
+ * carregado dentro de iframes (X-Frame-Options → ERR_BLOCKED_BY_RESPONSE),
+ * que é exatamente o erro do fluxo OAuth intermediado pelo Lovable Cloud Auth.
+ *
+ * O mesmo login já concede o escopo delegado do Power BI, então o visualizador
+ * reaproveita a sessão MSAL sem pedir uma segunda autenticação.
+ */
+export async function loginWithEntra(config: EntraConfig) {
+  const msal = await getMsal(config);
+  const result = await msal.loginPopup({
+    scopes: ["openid", "profile", "email", "User.Read", ...POWERBI_SCOPES],
+    prompt: "select_account",
+  });
+  if (result.account) msal.setActiveAccount(result.account);
+  if (!result.idToken) throw new Error("Entra ID não retornou o token de identidade");
+  return { idToken: result.idToken, account: result.account };
 }
