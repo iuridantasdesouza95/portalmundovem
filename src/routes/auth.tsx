@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 import {
   fetchEntraConfig,
+  handleMicrosoftRedirect,
   signInWithMicrosoft,
 } from "@/lib/powerbi-auth";
 
@@ -64,30 +65,95 @@ function AuthPage() {
 
   const busy = loading || msLoading;
 
+  /**
+   * Processa tanto uma sessão Supabase já existente quanto o retorno
+   * do loginRedirect do Microsoft Entra.
+   *
+   * IMPORTANTE: o retorno Microsoft acontece nesta mesma rota /auth.
+   * Não existe uma segunda página de popup nem outro loginPopup.
+   */
   useEffect(() => {
     let mounted = true;
 
     void (async () => {
-      const { data, error } = await supabase.auth.getSession();
+      try {
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
 
-      if (error) {
-        console.error("[AUTH] Erro ao recuperar sessão:", error);
-        return;
-      }
+        if (sessionError) {
+          console.error(
+            "[AUTH] Erro ao recuperar sessão:",
+            sessionError,
+          );
+        }
 
-      if (!mounted || !data.session) {
+        if (!mounted) return;
+
+        if (sessionData.session) {
+          console.log(
+            "[AUTH] Sessão do portal já existente:",
+            sessionData.session.user.email,
+          );
+
+          await navigate({ to: "/inicio", replace: true });
+          return;
+        }
+
+        const config = await fetchEntraConfig();
+
+        if (!config || !mounted) {
+          console.log(
+            "[AUTH] Nenhuma sessão do portal. Aguardando ação do usuário.",
+          );
+          return;
+        }
+
         console.log(
-          "[AUTH] Nenhuma sessão do portal. Aguardando ação do usuário.",
+          "[AUTH] Verificando retorno pendente do Microsoft Entra...",
         );
-        return;
+
+        const result = await handleMicrosoftRedirect(config);
+
+        if (!result) {
+          console.log(
+            "[AUTH] Nenhum retorno Microsoft pendente.",
+          );
+          return;
+        }
+
+        if (!mounted) return;
+
+        setMsLoading(true);
+
+        console.log(
+          "[AUTH] Retorno Microsoft recebido. Criando sessão do portal...",
+        );
+
+        await createPortalSession(result.idToken);
+      } catch (error: any) {
+        if (!mounted) return;
+
+        const errorCode = error?.errorCode ?? error?.code ?? "";
+
+        console.error(
+          "[AUTH] Erro ao processar autenticação Microsoft:",
+          errorCode || error,
+        );
+
+        if (errorCode === "interaction_in_progress") {
+          toast.error(
+            "A autenticação Microsoft ainda está sendo processada. Aguarde e tente novamente.",
+          );
+        } else {
+          toast.error(
+            error instanceof Error && error.message
+              ? error.message
+              : "Não foi possível concluir a autenticação Microsoft.",
+          );
+        }
+      } finally {
+        if (mounted) setMsLoading(false);
       }
-
-      console.log(
-        "[AUTH] Sessão do portal já existente:",
-        data.session.user.email,
-      );
-
-      await navigate({ to: "/inicio", replace: true });
     })();
 
     return () => {
@@ -96,7 +162,9 @@ function AuthPage() {
   }, [navigate]);
 
   async function createPortalSession(idToken: string) {
-    console.log("[AUTH] Validando identidade Microsoft no servidor...");
+    console.log(
+      "[AUTH] Validando identidade Microsoft no servidor...",
+    );
 
     const { email: portalEmail, tokenHash } = await entraSignInFn({
       data: { idToken },
@@ -113,12 +181,6 @@ function AuthPage() {
       portalEmail,
     );
 
-    /*
-     * O servidor usa admin.generateLink({ type: "magiclink" }).
-     * No Supabase atual, quando token_hash é informado, verifyOtp
-     * aceita somente token_hash e type. Enviar email junto provoca:
-     * "Only the token_hash and type should be provided".
-     */
     const { data: verifyData, error: verifyError } =
       await supabase.auth.verifyOtp({
         token_hash: tokenHash,
@@ -144,15 +206,16 @@ function AuthPage() {
       }
     }
 
-    console.log("[AUTH] Sessão do portal criada.");
+    console.log(
+      "[AUTH] Sessão do portal criada:",
+      portalEmail,
+    );
 
     await navigate({ to: "/inicio", replace: true });
   }
 
   async function microsoft() {
-    if (busy) {
-      return;
-    }
+    if (busy) return;
 
     setMsLoading(true);
 
@@ -167,46 +230,39 @@ function AuthPage() {
         );
       }
 
-      const { idToken, account } = await signInWithMicrosoft(config);
-
-      console.log(
-        "[AUTH] Conta Microsoft autenticada:",
-        account.username,
-      );
-
-      await createPortalSession(idToken);
+      /**
+       * loginRedirect encerra a execução desta página e envia o navegador
+       * para a Microsoft. Quando o usuário terminar, a Microsoft retorna
+       * para /auth e o useEffect acima processa handleRedirectPromise().
+       */
+      await signInWithMicrosoft(config);
     } catch (error: any) {
       const errorCode = error?.errorCode ?? error?.code ?? "";
 
       console.error(
         "[AUTH] Falha no login Microsoft:",
-        errorCode || error?.message,
+        errorCode || error?.message || error,
       );
 
-      if (
-        errorCode === "user_cancelled" ||
-        errorCode === "popup_window_error" ||
-        errorCode === "empty_window_error"
-      ) {
-        toast.error(
-          "Login Microsoft cancelado. Verifique se o navegador permite pop-ups deste site.",
-        );
+      if (errorCode === "user_cancelled") {
+        toast.error("Login Microsoft cancelado.");
+        setMsLoading(false);
         return;
       }
 
       if (errorCode === "interaction_in_progress") {
         toast.error(
-          "A autenticação Microsoft ainda está em andamento. Aguarde alguns segundos.",
+          "A autenticação Microsoft já está em andamento. Aguarde o retorno.",
         );
+        setMsLoading(false);
         return;
       }
 
       toast.error(
         error instanceof Error && error.message
           ? error.message
-          : "Não foi possível entrar com a Microsoft.",
+          : "Não foi possível iniciar o login com a Microsoft.",
       );
-    } finally {
       setMsLoading(false);
     }
   }
@@ -214,9 +270,7 @@ function AuthPage() {
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    if (busy) {
-      return;
-    }
+    if (busy) return;
 
     setLoading(true);
 
@@ -226,15 +280,16 @@ function AuthPage() {
         password,
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
 
       console.log("[AUTH] Login por e-mail concluído.");
 
       await navigate({ to: "/inicio", replace: true });
     } catch (error) {
-      console.error("[AUTH] Falha no login por e-mail:", error);
+      console.error(
+        "[AUTH] Falha no login por e-mail:",
+        error,
+      );
 
       toast.error(
         error instanceof Error
