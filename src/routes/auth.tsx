@@ -161,13 +161,12 @@ function AuthPage() {
 
     const {
       email: portalEmail,
-      accessToken,
-      refreshToken,
+      tokenHash,
     } = await entraSignInFn({
       data: { idToken },
     });
 
-    if (!portalEmail || !accessToken || !refreshToken) {
+    if (!portalEmail || !tokenHash) {
       throw new Error(
         "O servidor não retornou os dados necessários para criar a sessão do portal.",
       );
@@ -178,15 +177,20 @@ function AuthPage() {
       portalEmail,
     );
 
+    /*
+     * O servidor apenas valida o ID Token Microsoft e gera um token hash
+     * de magic link para o usuário Supabase. O browser consome esse token
+     * uma única vez para criar a sessão local.
+     */
     const { data: sessionData, error: sessionError } =
-      await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken,
+      await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: "magiclink",
       });
 
     if (sessionError) {
       console.error(
-        "[AUTH] Erro ao registrar sessão Supabase no navegador:",
+        "[AUTH] Erro ao criar sessão Supabase:",
         sessionError,
       );
       throw sessionError;
@@ -194,7 +198,7 @@ function AuthPage() {
 
     if (!sessionData.session) {
       throw new Error(
-        "O Supabase aceitou os tokens, mas não retornou uma sessão do portal.",
+        "O Supabase aceitou o token, mas não retornou uma sessão do portal.",
       );
     }
 
