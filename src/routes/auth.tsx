@@ -321,7 +321,7 @@ function AuthPage() {
       <div className="flex items-center justify-center px-6 py-16">
         <div className="w-full max-w-sm">
           <h1 className="font-display text-2xl font-semibold">
-            Acesso ao portal de Indicadores
+            Acesso ao Portal de Indicadores
           </h1>
 
           <p className="mt-1.5 text-sm text-muted-foreground">
