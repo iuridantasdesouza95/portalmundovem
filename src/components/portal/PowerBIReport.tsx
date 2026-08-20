@@ -132,6 +132,10 @@ export function PowerBIReport({ reportUrl, reportId, pageName, name }: Props) {
         const report = service.embed(node, embedConfig) as unknown as PowerBIReportInstance;
         embedRef.current = report;
 
+        // Exposto temporariamente para diagnóstico no navegador.
+        // Permite executar window.__POWERBI_REPORT__.getPages() no Console.
+        (window as typeof window & { __POWERBI_REPORT__?: PowerBIReportInstance }).__POWERBI_REPORT__ = report;
+
         const handleError = (event: any) => {
           console.error("[POWERBI SDK ERROR]", event?.detail);
           const detail = event?.detail;
@@ -152,10 +156,9 @@ export function PowerBIReport({ reportUrl, reportId, pageName, name }: Props) {
         const handleLoaded = async () => {
           console.log("[POWERBI] Relatório carregado.");
 
-          // Descobre automaticamente os nomes internos das páginas.
-          // Isso permite identificar com segurança o valor que deve ser
-          // salvo em "Page Name (Power BI)" no cadastro do dashboard.
-          if (report.getPages) {
+          if (typeof report.getPages !== "function") {
+            console.warn("[POWERBI] getPages() não está disponível nesta versão/instância do SDK.");
+          } else {
             try {
               const pages = await report.getPages();
               const normalizedPages = pages.map((page) => ({
@@ -219,6 +222,8 @@ export function PowerBIReport({ reportUrl, reportId, pageName, name }: Props) {
         }
       }
       embedRef.current = null;
+      const globalWindow = window as typeof window & { __POWERBI_REPORT__?: PowerBIReportInstance };
+      delete globalWindow.__POWERBI_REPORT__;
       try {
         node.replaceChildren();
       } catch {
