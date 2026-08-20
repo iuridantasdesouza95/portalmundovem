@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, ChevronDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { iconNames, getIcon } from "@/lib/icons";
 import { ROLES, logAction, roleLabel, useCategories, useDashboardRoles, useDashboards, type AppRole, type Dashboard } from "@/lib/portal-data";
@@ -53,6 +53,7 @@ function DashboardsAdmin() {
   const [editing, setEditing] = useState<Dashboard | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -61,6 +62,7 @@ function DashboardsAdmin() {
       setForm({ name: editing.name, description: editing.description, category_ids: ids, icon: editing.icon, report_url: editing.report_url, workspace: editing.workspace, report_id: editing.report_id ?? "", page_name: editing.page_name ?? "", sort_order: editing.sort_order, status: editing.status });
       setRoles(dashRoles.filter((r) => r.dashboard_id === editing.id).map((r) => r.role));
     } else { setForm({ ...emptyForm }); setRoles([]); }
+    setCategoryPickerOpen(false);
   }, [open, editing, dashRoles]);
 
   async function save(e: React.FormEvent) {
@@ -91,6 +93,9 @@ function DashboardsAdmin() {
     await logAction("removeu", "dashboard", d.name); qc.invalidateQueries({ queryKey: ["dashboards"] }); toast.success("Dashboard removido");
   }
 
+  const selectedNames = categories.filter((c) => form.category_ids.includes(c.id)).map((c) => c.name);
+  const categoryLabel = selectedNames.length === 0 ? "Selecione as categorias" : selectedNames.length <= 2 ? selectedNames.join(", ") : `${selectedNames.slice(0, 2).join(", ")} +${selectedNames.length - 2}`;
+
   return <div className="surface-panel overflow-hidden">
     <div className="flex items-center justify-between border-b p-4"><p className="text-sm font-medium">{dashboards.length} dashboards cadastrados</p><Button size="sm" onClick={() => { setEditing(null); setOpen(true); }}><Plus className="mr-1.5 size-4" /> Novo dashboard</Button></div>
     <Table><TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Categorias</TableHead><TableHead>Workspace</TableHead><TableHead>Perfis</TableHead><TableHead>Status</TableHead><TableHead className="w-24" /></TableRow></TableHeader><TableBody>
@@ -109,9 +114,20 @@ function DashboardsAdmin() {
         <Field label="Nome"><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></Field>
         <Field label="Descrição"><Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Categorias"><div className="grid grid-cols-2 gap-2 rounded-md border bg-card p-3">
-            {categories.map((c) => <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"><Checkbox checked={form.category_ids.includes(c.id)} onCheckedChange={(checked) => setForm({ ...form, category_ids: checked ? [...form.category_ids, c.id] : form.category_ids.filter((id) => id !== c.id) })} />{c.name}</label>)}
-          </div><p className="mt-1 text-xs text-muted-foreground">Selecione uma ou várias categorias. O dashboard aparecerá em todas as categorias selecionadas.</p></Field>
+          <Field label="Categorias"><div className="relative">
+            <button type="button" onClick={() => setCategoryPickerOpen((v) => !v)} className="flex h-9 w-full items-center justify-between rounded-md border bg-card px-3 text-left text-sm hover:bg-muted">
+              <span className={selectedNames.length ? "truncate" : "text-muted-foreground"}>{categoryLabel}</span><ChevronDown className="ml-2 size-4 shrink-0 text-muted-foreground" />
+            </button>
+            {categoryPickerOpen && <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-lg">
+              <div className="max-h-48 overflow-y-auto pr-1">
+                {categories.map((c) => <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted">
+                  <Checkbox checked={form.category_ids.includes(c.id)} onCheckedChange={(checked) => setForm({ ...form, category_ids: checked ? Array.from(new Set([...form.category_ids, c.id])) : form.category_ids.filter((id) => id !== c.id) })} />
+                  <span>{c.name}</span>
+                </label>)}
+                {!categories.length && <p className="px-2 py-2 text-sm text-muted-foreground">Nenhuma categoria cadastrada.</p>}
+              </div>
+            </div>}
+          </div><p className="mt-1 text-xs text-muted-foreground">Selecione uma ou várias categorias. A lista possui rolagem quando necessário.</p></Field>
           <Field label="Ícone"><select value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} className="h-9 w-full rounded-md border bg-card px-3 text-sm">{iconNames.map((n) => <option key={n} value={n}>{n}</option>)}</select></Field>
         </div>
         <Field label="URL do relatório (Power BI)"><Input value={form.report_url} onChange={(e) => setForm({ ...form, report_url: e.target.value })} placeholder="https://app.powerbi.com/reportEmbed?reportId=…" /></Field>
