@@ -16,6 +16,7 @@ export type Dashboard = {
   name: string;
   description: string;
   category_id: string | null;
+  category_ids: string[] | null;
   icon: string;
   report_url: string;
   workspace: string;
@@ -30,7 +31,7 @@ export function useSession() { return useQuery({ queryKey: ["session"], queryFn:
 export function useProfile() { return useQuery({ queryKey: ["profile"], queryFn: async () => { const { data: userData } = await supabase.auth.getUser(); const uid = userData.user?.id; if (!uid) return null; const { data } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle(); return data; } }); }
 export function useMyRoles() { return useQuery({ queryKey: ["my-roles"], queryFn: async () => { const { data: userData } = await supabase.auth.getUser(); const uid = userData.user?.id; if (!uid) return [] as AppRole[]; const { data } = await supabase.from("user_roles").select("role").eq("user_id", uid); return (data ?? []).map((r) => r.role as AppRole); } }); }
 export function useCategories() { return useQuery({ queryKey: ["categories"], queryFn: async () => { const { data, error } = await supabase.from("categories").select("*").order("sort_order", { ascending: true }); if (error) throw error; return (data ?? []) as Category[]; } }); }
-export function useDashboards() { return useQuery({ queryKey: ["dashboards"], queryFn: async () => { const { data, error } = await supabase.from("dashboards").select("*").order("sort_order", { ascending: true }); if (error) throw error; return (data ?? []) as Dashboard[]; } }); }
+export function useDashboards() { return useQuery({ queryKey: ["dashboards"], queryFn: async () => { const { data, error } = await supabase.from("dashboards").select("*").order("sort_order", { ascending: true }); if (error) throw error; return (data ?? []).map((d) => ({ ...d, category_ids: d.category_ids ?? (d.category_id ? [d.category_id] : []) })) as Dashboard[]; } }); }
 export function useDashboardRoles() { return useQuery({ queryKey: ["dashboard-roles"], queryFn: async () => { const { data, error } = await supabase.from("dashboard_roles").select("*"); if (error) throw error; return (data ?? []) as { id: string; dashboard_id: string; role: AppRole }[]; } }); }
 export function useFavorites() { return useQuery({ queryKey: ["favorites"], queryFn: async () => { const { data } = await supabase.from("favorites").select("dashboard_id"); return (data ?? []).map((f) => f.dashboard_id); } }); }
 export function useToggleFavorite() { const qc = useQueryClient(); return useMutation({ mutationFn: async ({ dashboardId, isFav }: { dashboardId: string; isFav: boolean }) => { const { data: userData } = await supabase.auth.getUser(); const uid = userData.user?.id; if (!uid) throw new Error("Sessão expirada"); if (isFav) await supabase.from("favorites").delete().eq("dashboard_id", dashboardId).eq("user_id", uid); else await supabase.from("favorites").insert({ dashboard_id: dashboardId, user_id: uid }); }, onSuccess: () => qc.invalidateQueries({ queryKey: ["favorites"] }) }); }
