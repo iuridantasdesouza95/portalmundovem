@@ -114,14 +114,13 @@ function AuthPage() {
     );
 
     /*
-     * entra-session.server.ts usa admin.generateLink({ type: "magiclink" }).
-     * Portanto, o verifyOtp precisa receber o tipo "magiclink".
-     * O tipo "email" não corresponde ao token emitido por generateLink
-     * e fazia o Supabase responder 400 validation_failed.
+     * O servidor usa admin.generateLink({ type: "magiclink" }).
+     * No Supabase atual, quando token_hash é informado, verifyOtp
+     * aceita somente token_hash e type. Enviar email junto provoca:
+     * "Only the token_hash and type should be provided".
      */
     const { data: verifyData, error: verifyError } =
       await supabase.auth.verifyOtp({
-        email: portalEmail,
         token_hash: tokenHash,
         type: "magiclink",
       });
