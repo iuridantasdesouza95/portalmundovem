@@ -5,3 +5,5 @@ ADD COLUMN IF NOT EXISTS page_name text;
 
 COMMENT ON COLUMN public.dashboards.page_name IS
   'Nome interno da página do relatório Power BI usado pelo SDK para abrir a página inicial.';
+
+-- Campo opcional: dashboards existentes continuam funcionando sem page_name.
