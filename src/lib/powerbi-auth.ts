@@ -1,16 +1,19 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { AccountInfo, PublicClientApplication } from "@azure/msal-browser";
+import type { AccountInfo, AuthenticationResult, PublicClientApplication } from "@azure/msal-browser";
 
 export const LOGIN_SCOPES = ["openid", "profile", "email", "User.Read"];
 export const POWERBI_SCOPES = ["https://analysis.windows.net/powerbi/api/Report.Read.All"];
 export type EntraConfig = { clientId: string; tenantId: string };
 export type PowerBIToken = { accessToken: string; expiresOn: number };
 
-/** Static HTML page: it must NOT load React/TanStack during an MSAL popup return. */
 export function getEntraRedirectUri() {
-  return `${window.location.origin}/auth-popup.html`;
+  return `${window.location.origin}/auth`;
+}
+
+export function getEntraSilentRedirectUri() {
+  return `${window.location.origin}/auth-blank.html`;
 }
 
 function parseSettings(rows: { key: string; value: unknown }[] | null): EntraConfig | null {
@@ -71,42 +74,26 @@ function resolveAccount(msal: PublicClientApplication): AccountInfo | null {
   return account;
 }
 
-let loginPromise: Promise<{ idToken: string; account: AccountInfo }> | null = null;
+export async function signInWithMicrosoft(config: EntraConfig): Promise<null> {
+  const msal = await getMsal(config);
+  console.info("[ENTRA] Iniciando loginRedirect para Microsoft...");
+  await msal.loginRedirect({
+    scopes: LOGIN_SCOPES,
+    prompt: "select_account",
+    redirectUri: getEntraRedirectUri(),
+  });
+  return null;
+}
 
-export async function signInWithMicrosoft(config: EntraConfig): Promise<{ idToken: string; account: AccountInfo }> {
-  if (loginPromise) return loginPromise;
-  loginPromise = (async () => {
-    const msal = await getMsal(config);
-    const cached = resolveAccount(msal);
-    if (cached) {
-      try {
-        const silent = await msal.acquireTokenSilent({ scopes: LOGIN_SCOPES, account: cached });
-        if (silent.idToken) {
-          const account = silent.account ?? cached;
-          msal.setActiveAccount(account);
-          return { idToken: silent.idToken, account };
-        }
-      } catch (error) {
-        console.info("[ENTRA] Sessão silenciosa indisponível; abrindo popup.", error);
-      }
-    }
-
-    console.info("[ENTRA] Abrindo loginPopup:", getEntraRedirectUri());
-    const response = await msal.loginPopup({
-      scopes: LOGIN_SCOPES,
-      prompt: "select_account",
-      redirectUri: getEntraRedirectUri(),
-    });
-    if (!response?.account) throw new Error("A Microsoft autenticou o usuário, mas nenhuma conta foi retornada.");
-    if (!response.idToken) throw new Error("O Microsoft Entra ID não retornou o token de identidade.");
-    msal.setActiveAccount(response.account);
-    return { idToken: response.idToken, account: response.account };
-  })();
-  try {
-    return await loginPromise;
-  } finally {
-    loginPromise = null;
-  }
+export async function handleMicrosoftRedirect(config: EntraConfig): Promise<AuthenticationResult | null> {
+  const msal = await getMsal(config);
+  const result = await msal.handleRedirectPromise();
+  if (!result) return null;
+  if (!result.account) throw new Error("A Microsoft autenticou o usuário, mas nenhuma conta foi retornada.");
+  if (!result.idToken) throw new Error("O Microsoft Entra ID não retornou o token de identidade.");
+  msal.setActiveAccount(result.account);
+  console.info("[ENTRA] Conta Microsoft autenticada:", result.account.username);
+  return result;
 }
 
 export async function signOutMsalCache(config?: EntraConfig | null) {
@@ -131,7 +118,7 @@ export async function getPowerBIToken(config: EntraConfig, options?: { loginHint
   if (!account) throw new Error(POWERBI_LOGIN_REQUIRED);
   if (options?.loginHint && account.username.toLowerCase() !== options.loginHint.toLowerCase()) console.warn("[POWERBI] Conta MSAL difere do usuário do portal.");
   try {
-    const result = await msal.acquireTokenSilent({ scopes: POWERBI_SCOPES, account });
+    const result = await msal.acquireTokenSilent({ scopes: POWERBI_SCOPES, account, redirectUri: getEntraSilentRedirectUri() });
     if (!result.accessToken) throw new Error(POWERBI_CONSENT_REQUIRED);
     return wrapPowerBIToken(result);
   } catch (error: any) {
@@ -144,13 +131,12 @@ export async function getPowerBIToken(config: EntraConfig, options?: { loginHint
 export async function requestPowerBIConsent(config: EntraConfig): Promise<PowerBIToken> {
   const msal = await getMsal(config);
   const account = resolveAccount(msal);
-  const result = await msal.acquireTokenPopup({
+  await msal.acquireTokenRedirect({
     scopes: POWERBI_SCOPES,
     ...(account ? { account } : {}),
     redirectUri: getEntraRedirectUri(),
   });
-  if (result.account) msal.setActiveAccount(result.account);
-  return wrapPowerBIToken(result);
+  throw new Error("O consentimento do Power BI foi iniciado. Após concluir, o portal continuará automaticamente.");
 }
 
 const TOKEN_KEY = (config?: EntraConfig | null) => ["powerbi-token", config?.clientId, config?.tenantId];
@@ -173,9 +159,7 @@ export function usePowerBIToken(enabled: boolean, loginHint?: string) {
   });
   async function consent() {
     if (!config) throw new Error("Entra ID não configurado.");
-    const token = await requestPowerBIConsent(config);
-    queryClient.setQueryData(TOKEN_KEY(config), token);
-    return token;
+    return requestPowerBIConsent(config);
   }
   return { ...query, consent, config };
 }
