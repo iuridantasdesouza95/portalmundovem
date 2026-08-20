@@ -5,7 +5,8 @@ import {
 
 export type EntraExchangeResult = {
   email: string;
-  tokenHash: string;
+  accessToken: string;
+  refreshToken: string;
 };
 
 const jwksCache = new Map<
@@ -23,10 +24,7 @@ function getJwks(tenantId: string) {
       ),
     );
 
-    jwksCache.set(
-      tenantId,
-      jwks,
-    );
+    jwksCache.set(tenantId, jwks);
   }
 
   return jwks;
@@ -35,9 +33,7 @@ function getJwks(tenantId: string) {
 export async function exchangeEntraIdToken(
   idToken: string,
 ): Promise<EntraExchangeResult> {
-  const {
-    supabaseAdmin,
-  } = await import(
+  const { supabaseAdmin } = await import(
     "@/integrations/supabase/client.server"
   );
 
@@ -45,16 +41,11 @@ export async function exchangeEntraIdToken(
   /* CONFIGURAÇÃO                                                           */
   /* ---------------------------------------------------------------------- */
 
-  const {
-    data: settings,
-    error: settingsError,
-  } = await supabaseAdmin
-    .from("app_settings")
-    .select("key, value")
-    .in("key", [
-      "azure_client_id",
-      "azure_tenant_id",
-    ]);
+  const { data: settings, error: settingsError } =
+    await supabaseAdmin
+      .from("app_settings")
+      .select("key, value")
+      .in("key", ["azure_client_id", "azure_tenant_id"]);
 
   if (settingsError) {
     console.error(
@@ -68,12 +59,10 @@ export async function exchangeEntraIdToken(
   }
 
   const map = Object.fromEntries(
-    (settings ?? []).map(
-      (setting) => [
-        setting.key,
-        setting.value,
-      ],
-    ),
+    (settings ?? []).map((setting) => [
+      setting.key,
+      setting.value,
+    ]),
   );
 
   const clientId = String(
@@ -102,7 +91,6 @@ export async function exchangeEntraIdToken(
       getJwks(tenantId),
       {
         audience: clientId,
-
         issuer: [
           `https://login.microsoftonline.com/${tenantId}/v2.0`,
           `https://sts.windows.net/${tenantId}/`,
@@ -127,14 +115,11 @@ export async function exchangeEntraIdToken(
   /* ---------------------------------------------------------------------- */
 
   const tokenTenantId =
-    typeof payload['tid'] === "string"
-      ? payload['tid']
+    typeof payload["tid"] === "string"
+      ? payload["tid"]
       : "";
 
-  if (
-    !tokenTenantId ||
-    tokenTenantId !== tenantId
-  ) {
+  if (!tokenTenantId || tokenTenantId !== tenantId) {
     throw new Error(
       "A conta Microsoft pertence a um tenant não autorizado.",
     );
@@ -145,47 +130,36 @@ export async function exchangeEntraIdToken(
   /* ---------------------------------------------------------------------- */
 
   const email = String(
-    payload['email'] ??
-      payload['preferred_username'] ??
-      payload['upn'] ??
+    payload["email"] ??
+      payload["preferred_username"] ??
+      payload["upn"] ??
       "",
   )
     .trim()
     .toLowerCase();
 
-  if (
-    !email ||
-    !email.includes("@")
-  ) {
+  if (!email || !email.includes("@")) {
     throw new Error(
       "A conta Microsoft não possui um e-mail válido.",
     );
   }
 
   const fullName =
-    typeof payload['name'] === "string" &&
-    payload['name'].trim()
-      ? payload['name'].trim()
+    typeof payload["name"] === "string" &&
+    payload["name"].trim()
+      ? payload["name"].trim()
       : email.split("@")[0];
 
   console.log(
     "[ENTRA SERVER] Identidade validada:",
-    {
-      email,
-      tenantId,
-    },
+    { email, tenantId },
   );
 
   /* ---------------------------------------------------------------------- */
   /* PROCURAR / CRIAR USUÁRIO SUPABASE                                     */
   /* ---------------------------------------------------------------------- */
 
-  let userId: string | null = null;
-
-  const {
-    data: usersData,
-    error: usersError,
-  } =
+  const { data: usersData, error: usersError } =
     await supabaseAdmin.auth.admin.listUsers({
       page: 1,
       perPage: 1000,
@@ -202,39 +176,28 @@ export async function exchangeEntraIdToken(
     );
   }
 
-  const existingUser =
-    usersData.users.find(
-      (user) =>
-        user.email?.toLowerCase() ===
-        email,
-    );
+  const existingUser = usersData.users.find(
+    (user) =>
+      user.email?.toLowerCase() === email,
+  );
 
   if (existingUser) {
-    userId = existingUser.id;
-
     console.log(
       "[ENTRA SERVER] Usuário Supabase existente:",
-      userId,
+      existingUser.id,
     );
   } else {
-    const {
-      data: createdUser,
-      error: createError,
-    } =
+    const { data: createdUser, error: createError } =
       await supabaseAdmin.auth.admin.createUser({
         email,
         email_confirm: true,
-
         user_metadata: {
           full_name: fullName,
           provider: "entra",
         },
       });
 
-    if (
-      createError ||
-      !createdUser.user
-    ) {
+    if (createError || !createdUser.user) {
       console.error(
         "[ENTRA SERVER] Erro ao criar usuário:",
         createError,
@@ -248,23 +211,29 @@ export async function exchangeEntraIdToken(
       );
     }
 
-    userId =
-      createdUser.user.id;
-
     console.log(
       "[ENTRA SERVER] Usuário Supabase criado:",
-      userId,
+      createdUser.user.id,
     );
   }
 
   /* ---------------------------------------------------------------------- */
-  /* GERAR TOKEN DE SESSÃO                                                  */
+  /* CRIAR A SESSÃO NO SERVIDOR                                             */
   /* ---------------------------------------------------------------------- */
 
-  const {
-    data: link,
-    error: linkError,
-  } =
+  /*
+   * O fluxo anterior devolvia o hashed_token para o browser e fazia
+   * verifyOtp() no client. Isso deixou a criação da sessão dependente de
+   * uma segunda chamada ao endpoint /auth/v1/verify e foi justamente onde
+   * o portal estava recebendo 400 validation_failed.
+   *
+   * Agora o token é gerado e consumido no servidor. O servidor devolve
+   * somente os tokens de sessão resultantes e o browser usa setSession().
+   * Assim, o token_hash nunca precisa trafegar até o client nem ser
+   * verificado duas vezes.
+   */
+
+  const { data: link, error: linkError } =
     await supabaseAdmin.auth.admin.generateLink({
       type: "magiclink",
       email,
@@ -287,13 +256,39 @@ export async function exchangeEntraIdToken(
     );
   }
 
+  const { data: verifyData, error: verifyError } =
+    await supabaseAdmin.auth.verifyOtp({
+      token_hash: link.properties.hashed_token,
+      type: "magiclink",
+    });
+
+  if (
+    verifyError ||
+    !verifyData.session?.access_token ||
+    !verifyData.session?.refresh_token
+  ) {
+    console.error(
+      "[ENTRA SERVER] Erro ao consumir token e criar sessão:",
+      verifyError,
+    );
+
+    throw (
+      verifyError ??
+      new Error(
+        "O Supabase não retornou uma sessão válida para o usuário.",
+      )
+    );
+  }
+
   console.log(
-    "[ENTRA SERVER] Token de sessão gerado.",
+    "[ENTRA SERVER] Sessão Supabase criada no servidor.",
   );
 
   return {
     email,
-    tokenHash:
-      link.properties.hashed_token,
+    accessToken:
+      verifyData.session.access_token,
+    refreshToken:
+      verifyData.session.refresh_token,
   };
 }
