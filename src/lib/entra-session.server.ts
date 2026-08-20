@@ -127,8 +127,8 @@ export async function exchangeEntraIdToken(
   /* ---------------------------------------------------------------------- */
 
   const tokenTenantId =
-    typeof payload.tid === "string"
-      ? payload.tid
+    typeof payload['tid'] === "string"
+      ? payload['tid']
       : "";
 
   if (
@@ -145,9 +145,9 @@ export async function exchangeEntraIdToken(
   /* ---------------------------------------------------------------------- */
 
   const email = String(
-    payload.email ??
-      payload.preferred_username ??
-      payload.upn ??
+    payload['email'] ??
+      payload['preferred_username'] ??
+      payload['upn'] ??
       "",
   )
     .trim()
@@ -163,9 +163,9 @@ export async function exchangeEntraIdToken(
   }
 
   const fullName =
-    typeof payload.name === "string" &&
-    payload.name.trim()
-      ? payload.name.trim()
+    typeof payload['name'] === "string" &&
+    payload['name'].trim()
+      ? payload['name'].trim()
       : email.split("@")[0];
 
   console.log(
