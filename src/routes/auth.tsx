@@ -57,30 +57,28 @@ function AuthPage() {
   const navigate = useNavigate();
 
   const [showEmail, setShowEmail] = useState(false);
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [msLoading, setMsLoading] = useState(false);
 
   const busy = loading || msLoading;
 
-  /* ------------------------------------------------------------------ */
-  /* SESSÃO EXISTENTE                                                   */
-  /* ------------------------------------------------------------------ */
-
   useEffect(() => {
     let mounted = true;
 
     void (async () => {
-      const { data } = await supabase.auth.getSession();
+      const { data, error } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error("[AUTH] Erro ao recuperar sessão:", error);
+        return;
+      }
 
       if (!mounted || !data.session) {
         console.log(
           "[AUTH] Nenhuma sessão do portal. Aguardando ação do usuário.",
         );
-
         return;
       }
 
@@ -97,15 +95,9 @@ function AuthPage() {
     };
   }, [navigate]);
 
-  /* ------------------------------------------------------------------ */
-  /* SESSÃO DO PORTAL A PARTIR DO ID TOKEN MICROSOFT                    */
-  /* ------------------------------------------------------------------ */
-
   async function createPortalSession(idToken: string) {
-    /*
-     * A validação real do ID Token acontece no servidor
-     * (assinatura, audience, issuer e tenant).
-     */
+    console.log("[AUTH] Validando identidade Microsoft no servidor...");
+
     const { email: portalEmail, tokenHash } = await entraSignInFn({
       data: { idToken },
     });
@@ -121,32 +113,42 @@ function AuthPage() {
       portalEmail,
     );
 
-    const { error } = await supabase.auth.verifyOtp({
-      email: portalEmail,
-      token_hash: tokenHash,
-      type: "email",
-    });
+    /*
+     * entra-session.server.ts usa admin.generateLink({ type: "magiclink" }).
+     * Portanto, o verifyOtp precisa receber o tipo "magiclink".
+     * O tipo "email" não corresponde ao token emitido por generateLink
+     * e fazia o Supabase responder 400 validation_failed.
+     */
+    const { data: verifyData, error: verifyError } =
+      await supabase.auth.verifyOtp({
+        email: portalEmail,
+        token_hash: tokenHash,
+        type: "magiclink",
+      });
 
-    if (error) {
-      throw error;
+    if (verifyError) {
+      console.error(
+        "[AUTH] Erro ao criar sessão Supabase:",
+        verifyError,
+      );
+      throw verifyError;
     }
 
-    const { data } = await supabase.auth.getSession();
+    if (!verifyData.session) {
+      const { data: currentSession } =
+        await supabase.auth.getSession();
 
-    if (!data.session) {
-      throw new Error(
-        "O login Microsoft foi concluído, mas a sessão do portal não foi criada.",
-      );
+      if (!currentSession.session) {
+        throw new Error(
+          "O Supabase validou o acesso, mas não retornou uma sessão do portal.",
+        );
+      }
     }
 
     console.log("[AUTH] Sessão do portal criada.");
 
     await navigate({ to: "/inicio", replace: true });
   }
-
-  /* ------------------------------------------------------------------ */
-  /* LOGIN MICROSOFT (PRINCIPAL)                                        */
-  /* ------------------------------------------------------------------ */
 
   async function microsoft() {
     if (busy) {
@@ -166,8 +168,7 @@ function AuthPage() {
         );
       }
 
-      const { idToken, account } =
-        await signInWithMicrosoft(config);
+      const { idToken, account } = await signInWithMicrosoft(config);
 
       console.log(
         "[AUTH] Conta Microsoft autenticada:",
@@ -176,8 +177,7 @@ function AuthPage() {
 
       await createPortalSession(idToken);
     } catch (error: any) {
-      const errorCode =
-        error?.errorCode ?? error?.code ?? "";
+      const errorCode = error?.errorCode ?? error?.code ?? "";
 
       console.error(
         "[AUTH] Falha no login Microsoft:",
@@ -192,7 +192,6 @@ function AuthPage() {
         toast.error(
           "Login Microsoft cancelado. Verifique se o navegador permite pop-ups deste site.",
         );
-
         return;
       }
 
@@ -200,7 +199,6 @@ function AuthPage() {
         toast.error(
           "A autenticação Microsoft ainda está em andamento. Aguarde alguns segundos.",
         );
-
         return;
       }
 
@@ -213,10 +211,6 @@ function AuthPage() {
       setMsLoading(false);
     }
   }
-
-  /* ------------------------------------------------------------------ */
-  /* LOGIN POR E-MAIL (FALLBACK)                                        */
-  /* ------------------------------------------------------------------ */
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -252,10 +246,6 @@ function AuthPage() {
       setLoading(false);
     }
   }
-
-  /* ------------------------------------------------------------------ */
-  /* INTERFACE                                                          */
-  /* ------------------------------------------------------------------ */
 
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
@@ -326,13 +316,11 @@ function AuthPage() {
           ) : (
             <form onSubmit={submit} className="space-y-4">
               <p className="text-xs text-muted-foreground">
-                Use apenas quando o Microsoft Entra ID não
-                estiver disponível.
+                Use apenas quando o Microsoft Entra ID não estiver disponível.
               </p>
 
               <div className="space-y-1.5">
                 <Label htmlFor="email">E-mail corporativo</Label>
-
                 <Input
                   id="email"
                   type="email"
@@ -345,7 +333,6 @@ function AuthPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="password">Senha</Label>
-
                 <Input
                   id="password"
                   type="password"
