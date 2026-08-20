@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
-import { usePowerBIToken } from "@/lib/powerbi-auth";
+import {
+  POWERBI_CONSENT_REQUIRED,
+  POWERBI_LOGIN_REQUIRED,
+  usePowerBIToken,
+} from "@/lib/powerbi-auth";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { useProfile } from "@/lib/portal-data";
 
 type Props = {
@@ -36,6 +42,9 @@ export function PowerBIReport({
   const [isEmbedding, setIsEmbedding] =
     useState(false);
 
+  const [consenting, setConsenting] =
+    useState(false);
+
   const { data: profile } = useProfile();
 
   const wantsSdk = Boolean(reportUrl && reportId);
@@ -45,6 +54,7 @@ export function PowerBIReport({
     isLoading: tokenLoading,
     isError: tokenError,
     error: tokenErrorObject,
+    consent,
   } = usePowerBIToken(
     wantsSdk,
     profile?.email,
@@ -370,28 +380,74 @@ export function PowerBIReport({
    * Token não obtido.
    */
   if (tokenError || !hasAccessToken) {
+    const reason =
+      tokenErrorObject instanceof Error
+        ? tokenErrorObject.message
+        : "";
+
+    const needsConsent =
+      reason === POWERBI_CONSENT_REQUIRED;
+
+    const needsLogin =
+      reason === POWERBI_LOGIN_REQUIRED;
+
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-4 rounded-xl border bg-card p-10 text-center">
         <ShieldAlert className="size-8 text-destructive" />
 
         <div>
           <p className="text-sm font-medium">
-            Não foi possível autenticar no Power BI
+            {needsConsent
+              ? "Autorização do Power BI necessária"
+              : "Não foi possível autenticar no Power BI"}
           </p>
 
           <p className="mt-2 max-w-lg text-xs text-muted-foreground">
-            Faça login com sua conta Microsoft corporativa
-            para acessar este dashboard.
+            {needsConsent
+              ? "Na primeira utilização, a Microsoft precisa do seu consentimento para o portal ler seus relatórios do Power BI. Depois disso o acesso passa a ser automático."
+              : needsLogin
+                ? "Sua sessão Microsoft não está disponível neste navegador. Saia e entre novamente com a conta corporativa Microsoft."
+                : "Não foi possível obter o acesso ao Power BI com a sua conta Microsoft."}
           </p>
         </div>
 
-        {tokenErrorObject instanceof Error && (
-          <div className="max-w-2xl rounded-md border bg-muted/40 p-3 text-left">
-            <p className="break-all text-xs text-muted-foreground">
-              {tokenErrorObject.message}
-            </p>
-          </div>
+        {needsConsent && (
+          <Button
+            disabled={consenting}
+            onClick={async () => {
+              setConsenting(true);
+
+              try {
+                await consent();
+              } catch (error) {
+                console.error(
+                  "[POWERBI] Consentimento não concluído:",
+                  error,
+                );
+
+                toast.error(
+                  "Não foi possível concluir a autorização do Power BI.",
+                );
+              } finally {
+                setConsenting(false);
+              }
+            }}
+          >
+            {consenting
+              ? "Aguardando Microsoft…"
+              : "Autorizar Power BI"}
+          </Button>
         )}
+
+        {!needsConsent &&
+          !needsLogin &&
+          tokenErrorObject instanceof Error && (
+            <div className="max-w-2xl rounded-md border bg-muted/40 p-3 text-left">
+              <p className="break-all text-xs text-muted-foreground">
+                {tokenErrorObject.message}
+              </p>
+            </div>
+          )}
       </div>
     );
   }
