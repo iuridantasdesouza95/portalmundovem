@@ -94,6 +94,7 @@ const emptyForm = {
   report_url: "",
   workspace: "",
   report_id: "",
+  page_name: "",
   sort_order: 0,
   status: "ativo",
 };
@@ -119,6 +120,7 @@ function DashboardsAdmin() {
         report_url: editing.report_url,
         workspace: editing.workspace,
         report_id: editing.report_id ?? "",
+        page_name: editing.page_name ?? "",
         sort_order: editing.sort_order,
         status: editing.status,
       });
@@ -135,21 +137,22 @@ function DashboardsAdmin() {
       ...form,
       category_id: form.category_id || null,
       report_id: form.report_id || null,
+      page_name: form.page_name || null,
       sort_order: Number(form.sort_order) || 0,
     };
     let dashboardId = editing?.id;
     if (editing) {
       const { error } = await supabase.from("dashboards").update(payload).eq("id", editing.id);
       if (error) {
-      toast.error(error.message);
-      return;
-    }
+        toast.error(error.message);
+        return;
+      }
     } else {
       const { data, error } = await supabase.from("dashboards").insert(payload).select("id").single();
       if (error) {
-      toast.error(error.message);
-      return;
-    }
+        toast.error(error.message);
+        return;
+      }
       dashboardId = data.id;
     }
     if (dashboardId) {
@@ -324,6 +327,16 @@ function DashboardsAdmin() {
                 />
               </Field>
             </div>
+            <Field label="Page Name (Power BI)">
+              <Input
+                value={form.page_name}
+                onChange={(e) => setForm({ ...form, page_name: e.target.value })}
+                placeholder="Ex.: ReportSection123"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Nome interno da página usado pelo Power BI SDK. Deixe vazio para abrir a página padrão.
+              </p>
+            </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Ordem de exibição">
                 <Input
