@@ -5,8 +5,7 @@ import {
 
 export type EntraExchangeResult = {
   email: string;
-  accessToken: string;
-  refreshToken: string;
+  tokenHash: string;
 };
 
 const jwksCache = new Map<
@@ -218,19 +217,21 @@ export async function exchangeEntraIdToken(
   }
 
   /* ---------------------------------------------------------------------- */
-  /* CRIAR A SESSÃO NO SERVIDOR                                             */
+  /* GERAR TOKEN HASH PARA A SESSÃO                                         */
   /* ---------------------------------------------------------------------- */
 
   /*
-   * O fluxo anterior devolvia o hashed_token para o browser e fazia
-   * verifyOtp() no client. Isso deixou a criação da sessão dependente de
-   * uma segunda chamada ao endpoint /auth/v1/verify e foi justamente onde
-   * o portal estava recebendo 400 validation_failed.
+   * O servidor valida a identidade Microsoft e garante que exista um
+   * usuário Supabase confirmado. Em seguida gera um magic link usando a
+   * API Admin do Supabase.
    *
-   * Agora o token é gerado e consumido no servidor. O servidor devolve
-   * somente os tokens de sessão resultantes e o browser usa setSession().
-   * Assim, o token_hash nunca precisa trafegar até o client nem ser
-   * verificado duas vezes.
+   * Importante: o hashed_token NÃO é consumido aqui no servidor. Ele é
+   * entregue uma única vez ao browser e imediatamente consumido pelo
+   * supabase.auth.verifyOtp({ token_hash, type: "magiclink" }).
+   *
+   * Isso evita a tentativa anterior de criar a sessão no servidor e depois
+   * transportar access/refresh tokens por uma Server Function, fluxo que
+   * estava chegando ao browser sem os campos necessários.
    */
 
   const { data: link, error: linkError } =
@@ -239,10 +240,10 @@ export async function exchangeEntraIdToken(
       email,
     });
 
-  if (
-    linkError ||
-    !link?.properties?.hashed_token
-  ) {
+  const tokenHash =
+    link?.properties?.hashed_token ?? "";
+
+  if (linkError || !tokenHash) {
     console.error(
       "[ENTRA SERVER] Erro ao gerar token de sessão:",
       linkError,
@@ -251,44 +252,18 @@ export async function exchangeEntraIdToken(
     throw (
       linkError ??
       new Error(
-        "Não foi possível gerar a sessão do portal.",
-      )
-    );
-  }
-
-  const { data: verifyData, error: verifyError } =
-    await supabaseAdmin.auth.verifyOtp({
-      token_hash: link.properties.hashed_token,
-      type: "magiclink",
-    });
-
-  if (
-    verifyError ||
-    !verifyData.session?.access_token ||
-    !verifyData.session?.refresh_token
-  ) {
-    console.error(
-      "[ENTRA SERVER] Erro ao consumir token e criar sessão:",
-      verifyError,
-    );
-
-    throw (
-      verifyError ??
-      new Error(
-        "O Supabase não retornou uma sessão válida para o usuário.",
+        "Não foi possível gerar o token da sessão do portal.",
       )
     );
   }
 
   console.log(
-    "[ENTRA SERVER] Sessão Supabase criada no servidor.",
+    "[ENTRA SERVER] Token hash de sessão gerado para:",
+    email,
   );
 
   return {
     email,
-    accessToken:
-      verifyData.session.access_token,
-    refreshToken:
-      verifyData.session.refresh_token,
+    tokenHash,
   };
 }
