@@ -298,7 +298,7 @@ function AuthPage() {
         <div className="absolute inset-0 opacity-[0.14] grid-fade" />
 
         <span className="relative font-display text-lg font-semibold text-primary-foreground">
-          Vem · Portal BI
+          Vem · Portal de Indicadores
         </span>
 
         <div className="relative max-w-md">
@@ -321,13 +321,11 @@ function AuthPage() {
       <div className="flex items-center justify-center px-6 py-16">
         <div className="w-full max-w-sm">
           <h1 className="font-display text-2xl font-semibold">
-            Acessar o portal
+            Acesso ao portal de Indicadores
           </h1>
 
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Entre com sua conta corporativa Microsoft — a
-            mesma identidade é utilizada para abrir os
-            dashboards do Power BI.
+            Entre com sua conta corporativa Microsoft.
           </p>
 
           <Button
