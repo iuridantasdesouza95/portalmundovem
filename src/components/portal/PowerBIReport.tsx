@@ -146,7 +146,7 @@ export function PowerBIReport({
           },
         );
 
-        const report = service.embed(node, {
+        const embedConfig = {
           type: "report",
 
           id: reportId as string,
@@ -183,7 +183,9 @@ export function PowerBIReport({
             background:
               pbi.models.BackgroundType.Transparent,
           },
-        });
+        } as unknown as pbi.IEmbedConfiguration;
+
+        const report = service.embed(node, embedConfig);
 
         embedRef.current =
           report as unknown as PowerBIReportInstance;

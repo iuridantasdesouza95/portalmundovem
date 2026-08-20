@@ -126,16 +126,10 @@ export async function getMsal(
           authority: `https://login.microsoftonline.com/${config.tenantId}`,
           redirectUri: window.location.origin,
           postLogoutRedirectUri: window.location.origin,
-          navigateToLoginRequestUrl: false,
         },
 
         cache: {
           cacheLocation: "localStorage",
-          storeAuthStateInCookie: false,
-        },
-
-        system: {
-          allowNativeBroker: false,
         },
       });
 
@@ -168,7 +162,8 @@ function resolveAccount(
     return active;
   }
 
-  const account = msal.getAllAccounts()[0] ?? null;
+  const account: AccountInfo | null =
+    msal.getAllAccounts()[0] ?? null;
 
   if (account) {
     msal.setActiveAccount(account);
@@ -322,7 +317,7 @@ function wrapPowerBIToken(result: {
  */
 export async function getPowerBIToken(
   config: EntraConfig,
-  options?: { loginHint?: string },
+  options?: { loginHint?: string | undefined },
 ): Promise<PowerBIToken> {
   const msal = await getMsal(config);
 
@@ -423,7 +418,7 @@ const TOKEN_KEY = (config?: EntraConfig | null) => [
 
 export function usePowerBIToken(
   enabled: boolean,
-  loginHint?: string,
+  loginHint?: string | undefined,
 ) {
   const { data: config } = useEntraConfig();
 
@@ -472,7 +467,7 @@ export function usePowerBIToken(
 /* PREWARM — SOMENTE SILENCIOSO                                               */
 /* -------------------------------------------------------------------------- */
 
-export function usePowerBIPrewarm(loginHint?: string) {
+export function usePowerBIPrewarm(loginHint?: string | undefined) {
   const { data: config } = useEntraConfig();
 
   const queryClient = useQueryClient();
