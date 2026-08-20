@@ -183,7 +183,7 @@ export function PowerBIReport({
             background:
               pbi.models.BackgroundType.Transparent,
           },
-        } as unknown as pbi.IEmbedConfiguration;
+        } as unknown as Parameters<typeof service.embed>[1];
 
         const report = service.embed(node, embedConfig);
 
