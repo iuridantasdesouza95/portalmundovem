@@ -65,13 +65,6 @@ function AuthPage() {
 
   const busy = loading || msLoading;
 
-  /**
-   * Processa tanto uma sessão Supabase já existente quanto o retorno
-   * do loginRedirect do Microsoft Entra.
-   *
-   * IMPORTANTE: o retorno Microsoft acontece nesta mesma rota /auth.
-   * Não existe uma segunda página de popup nem outro loginPopup.
-   */
   useEffect(() => {
     let mounted = true;
 
@@ -166,11 +159,15 @@ function AuthPage() {
       "[AUTH] Validando identidade Microsoft no servidor...",
     );
 
-    const { email: portalEmail, tokenHash } = await entraSignInFn({
+    const {
+      email: portalEmail,
+      accessToken,
+      refreshToken,
+    } = await entraSignInFn({
       data: { idToken },
     });
 
-    if (!portalEmail || !tokenHash) {
+    if (!portalEmail || !accessToken || !refreshToken) {
       throw new Error(
         "O servidor não retornou os dados necessários para criar a sessão do portal.",
       );
@@ -181,34 +178,29 @@ function AuthPage() {
       portalEmail,
     );
 
-    const { data: verifyData, error: verifyError } =
-      await supabase.auth.verifyOtp({
-        token_hash: tokenHash,
-        type: "magiclink",
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
       });
 
-    if (verifyError) {
+    if (sessionError) {
       console.error(
-        "[AUTH] Erro ao criar sessão Supabase:",
-        verifyError,
+        "[AUTH] Erro ao registrar sessão Supabase no navegador:",
+        sessionError,
       );
-      throw verifyError;
+      throw sessionError;
     }
 
-    if (!verifyData.session) {
-      const { data: currentSession } =
-        await supabase.auth.getSession();
-
-      if (!currentSession.session) {
-        throw new Error(
-          "O Supabase validou o acesso, mas não retornou uma sessão do portal.",
-        );
-      }
+    if (!sessionData.session) {
+      throw new Error(
+        "O Supabase aceitou os tokens, mas não retornou uma sessão do portal.",
+      );
     }
 
     console.log(
-      "[AUTH] Sessão do portal criada:",
-      portalEmail,
+      "[AUTH] Sessão Supabase confirmada:",
+      sessionData.session.user.email,
     );
 
     await navigate({ to: "/inicio", replace: true });
@@ -230,11 +222,6 @@ function AuthPage() {
         );
       }
 
-      /**
-       * loginRedirect encerra a execução desta página e envia o navegador
-       * para a Microsoft. Quando o usuário terminar, a Microsoft retorna
-       * para /auth e o useEffect acima processa handleRedirectPromise().
-       */
       await signInWithMicrosoft(config);
     } catch (error: any) {
       const errorCode = error?.errorCode ?? error?.code ?? "";
