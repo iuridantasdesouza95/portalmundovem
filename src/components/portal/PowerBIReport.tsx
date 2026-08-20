@@ -16,9 +16,16 @@ type Props = {
   name: string;
 };
 
+type PowerBIPage = {
+  name: string;
+  displayName: string;
+  order: number;
+};
+
 type PowerBIReportInstance = {
   setAccessToken: (token: string) => Promise<void>;
   setPage?: (pageName: string) => Promise<void>;
+  getPages?: () => Promise<PowerBIPage[]>;
   on: (eventName: string, handler: (event: any) => void) => void;
   off: (eventName: string, handler?: (event: any) => void) => void;
 };
@@ -144,6 +151,30 @@ export function PowerBIReport({ reportUrl, reportId, pageName, name }: Props) {
 
         const handleLoaded = async () => {
           console.log("[POWERBI] Relatório carregado.");
+
+          // Descobre automaticamente os nomes internos das páginas.
+          // Isso permite identificar com segurança o valor que deve ser
+          // salvo em "Page Name (Power BI)" no cadastro do dashboard.
+          if (report.getPages) {
+            try {
+              const pages = await report.getPages();
+              const normalizedPages = pages.map((page) => ({
+                name: page.name,
+                displayName: page.displayName,
+                order: page.order,
+              }));
+
+              console.group("[POWERBI] Páginas disponíveis");
+              console.table(normalizedPages);
+              console.info(
+                "[POWERBI] Para configurar uma página específica, use o valor da coluna 'name' no campo Page Name (Power BI).",
+              );
+              console.groupEnd();
+            } catch (error) {
+              console.warn("[POWERBI] Não foi possível obter as páginas:", error);
+            }
+          }
+
           if (pageName && report.setPage) {
             try {
               await report.setPage(pageName);
